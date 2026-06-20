@@ -198,13 +198,13 @@ function QuickTile({
   tone: string;
 }) {
   return (
-    <Link
-      to={href}
+    <a
+      href={href}
       className="group relative overflow-hidden rounded-2xl border border-border bg-card/70 p-3 backdrop-blur transition hover:border-primary/60"
     >
       <div aria-hidden className={`absolute inset-0 -z-10 bg-gradient-to-br ${tone} opacity-80`} />
       <Icon size={18} className="text-foreground/90" />
       <div className="mt-2 text-sm font-semibold text-foreground">{label}</div>
-    </Link>
+    </a>
   );
 }

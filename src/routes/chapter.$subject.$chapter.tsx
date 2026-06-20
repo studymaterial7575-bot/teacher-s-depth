@@ -350,7 +350,7 @@ function ChapterPage() {
       </section>
 
       <div className="mt-8 flex justify-between text-xs text-muted-foreground">
-        <Link to={`/subjects/${subject.key}`} className="hover:text-foreground">
+        <Link to="/subjects/$slug" params={{ slug: subject.key }} className="hover:text-foreground">
           ← All {subject.name} chapters
         </Link>
         <Link to="/companion" className="hover:text-foreground">

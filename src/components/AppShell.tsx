@@ -105,14 +105,12 @@ export function AppShell({
 
 function NavItem({ to, icon: Icon, label }: { to: string; icon: any; label: string }) {
   return (
-    <Link
-      to={to}
-      className="flex flex-col items-center gap-1 py-2 text-[11px] text-muted-foreground"
-      activeProps={{ className: "text-primary" }}
-      activeOptions={{ exact: true }}
+    <a
+      href={to}
+      className="flex flex-col items-center gap-1 py-2 text-[11px] text-muted-foreground hover:text-foreground"
     >
       <Icon size={18} />
       {label}
-    </Link>
+    </a>
   );
 }

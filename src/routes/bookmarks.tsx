@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { Bookmark as BookmarkIcon, Flame, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { STORAGE_KEYS, useLocalStorage, type Bookmark, type Note, type Progress } from "@/lib/storage";
@@ -78,10 +78,10 @@ function BookmarksPage() {
             <div className="space-y-2">
               {g.items.map((b) => (
                 <div key={b.id} className="flex items-center gap-3 rounded-2xl border border-border bg-card/60 p-3">
-                  <Link to={b.href} className="min-w-0 flex-1">
+                  <a href={b.href} className="min-w-0 flex-1">
                     <div className="truncate text-sm font-semibold text-foreground">{b.title}</div>
                     {b.subtitle && <div className="truncate text-[11px] text-muted-foreground">{b.subtitle}</div>}
-                  </Link>
+                  </a>
                   <button
                     onClick={() => setBookmarks((list) => list.filter((x) => x.id !== b.id))}
                     className="text-muted-foreground hover:text-destructive"
