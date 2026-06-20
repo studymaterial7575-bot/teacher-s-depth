@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import useEmblaCarousel from "embla-carousel-react";
 import { TABS, type AnalysisResult } from "./types";
 import { DiagramCard } from "./DiagramCard";
+import { ImportanceBadge } from "./ImportanceBadge";
 
 function Block({ children }: { children: React.ReactNode }) {
   return <div className="space-y-4 pb-24 pt-2">{children}</div>;
@@ -38,6 +39,8 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
           Topic · <span className="text-foreground">{result.topic}</span>
         </div>
       )}
+
+      <ImportanceBadge result={result} />
 
       {/* Tab pills */}
       <div className="-mx-4 mb-3 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
