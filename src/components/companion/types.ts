@@ -5,6 +5,9 @@ export type VideoItem = { title: string; query: string };
 
 export type AnalysisResult = {
   topic: string;
+  importanceStars?: 2 | 3 | 4 | 5;
+  importanceLabel?: "Very Important" | "Important" | "Moderate" | "Optional";
+  teacherNote?: string;
   solution: string;
   diagrams: DiagramItem[];
   simpleExamples: ExampleItem[];
