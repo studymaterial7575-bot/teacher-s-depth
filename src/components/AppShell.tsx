@@ -29,12 +29,12 @@ export function AppShell({
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur-xl">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
           {back ? (
-            <Link
-              to={back.to}
+            <a
+              href={back.to}
               className="rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
             >
               ← {back.label ?? "Back"}
-            </Link>
+            </a>
           ) : (
             <Link to="/" className="flex items-center gap-2 text-foreground">
               <span
