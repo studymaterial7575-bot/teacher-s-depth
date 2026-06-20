@@ -9,13 +9,44 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ToolsRouteImport } from './routes/tools'
+import { Route as SearchRouteImport } from './routes/search'
+import { Route as CompanionRouteImport } from './routes/companion'
+import { Route as BookmarksRouteImport } from './routes/bookmarks'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SubjectsSlugRouteImport } from './routes/subjects.$slug'
 import { Route as ApiDiagramImageRouteImport } from './routes/api/diagram-image'
 import { Route as ApiAnalyzeRouteImport } from './routes/api/analyze'
+import { Route as ChapterSubjectChapterRouteImport } from './routes/chapter.$subject.$chapter'
 
+const ToolsRoute = ToolsRouteImport.update({
+  id: '/tools',
+  path: '/tools',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompanionRoute = CompanionRouteImport.update({
+  id: '/companion',
+  path: '/companion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BookmarksRoute = BookmarksRouteImport.update({
+  id: '/bookmarks',
+  path: '/bookmarks',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubjectsSlugRoute = SubjectsSlugRouteImport.update({
+  id: '/subjects/$slug',
+  path: '/subjects/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiDiagramImageRoute = ApiDiagramImageRouteImport.update({
@@ -28,44 +59,136 @@ const ApiAnalyzeRoute = ApiAnalyzeRouteImport.update({
   path: '/api/analyze',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChapterSubjectChapterRoute = ChapterSubjectChapterRouteImport.update({
+  id: '/chapter/$subject/$chapter',
+  path: '/chapter/$subject/$chapter',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/bookmarks': typeof BookmarksRoute
+  '/companion': typeof CompanionRoute
+  '/search': typeof SearchRoute
+  '/tools': typeof ToolsRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/diagram-image': typeof ApiDiagramImageRoute
+  '/subjects/$slug': typeof SubjectsSlugRoute
+  '/chapter/$subject/$chapter': typeof ChapterSubjectChapterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/bookmarks': typeof BookmarksRoute
+  '/companion': typeof CompanionRoute
+  '/search': typeof SearchRoute
+  '/tools': typeof ToolsRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/diagram-image': typeof ApiDiagramImageRoute
+  '/subjects/$slug': typeof SubjectsSlugRoute
+  '/chapter/$subject/$chapter': typeof ChapterSubjectChapterRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/bookmarks': typeof BookmarksRoute
+  '/companion': typeof CompanionRoute
+  '/search': typeof SearchRoute
+  '/tools': typeof ToolsRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/diagram-image': typeof ApiDiagramImageRoute
+  '/subjects/$slug': typeof SubjectsSlugRoute
+  '/chapter/$subject/$chapter': typeof ChapterSubjectChapterRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/analyze' | '/api/diagram-image'
+  fullPaths:
+    | '/'
+    | '/bookmarks'
+    | '/companion'
+    | '/search'
+    | '/tools'
+    | '/api/analyze'
+    | '/api/diagram-image'
+    | '/subjects/$slug'
+    | '/chapter/$subject/$chapter'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/analyze' | '/api/diagram-image'
-  id: '__root__' | '/' | '/api/analyze' | '/api/diagram-image'
+  to:
+    | '/'
+    | '/bookmarks'
+    | '/companion'
+    | '/search'
+    | '/tools'
+    | '/api/analyze'
+    | '/api/diagram-image'
+    | '/subjects/$slug'
+    | '/chapter/$subject/$chapter'
+  id:
+    | '__root__'
+    | '/'
+    | '/bookmarks'
+    | '/companion'
+    | '/search'
+    | '/tools'
+    | '/api/analyze'
+    | '/api/diagram-image'
+    | '/subjects/$slug'
+    | '/chapter/$subject/$chapter'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BookmarksRoute: typeof BookmarksRoute
+  CompanionRoute: typeof CompanionRoute
+  SearchRoute: typeof SearchRoute
+  ToolsRoute: typeof ToolsRoute
   ApiAnalyzeRoute: typeof ApiAnalyzeRoute
   ApiDiagramImageRoute: typeof ApiDiagramImageRoute
+  SubjectsSlugRoute: typeof SubjectsSlugRoute
+  ChapterSubjectChapterRoute: typeof ChapterSubjectChapterRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/tools': {
+      id: '/tools'
+      path: '/tools'
+      fullPath: '/tools'
+      preLoaderRoute: typeof ToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/companion': {
+      id: '/companion'
+      path: '/companion'
+      fullPath: '/companion'
+      preLoaderRoute: typeof CompanionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bookmarks': {
+      id: '/bookmarks'
+      path: '/bookmarks'
+      fullPath: '/bookmarks'
+      preLoaderRoute: typeof BookmarksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subjects/$slug': {
+      id: '/subjects/$slug'
+      path: '/subjects/$slug'
+      fullPath: '/subjects/$slug'
+      preLoaderRoute: typeof SubjectsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/diagram-image': {
@@ -82,13 +205,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAnalyzeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chapter/$subject/$chapter': {
+      id: '/chapter/$subject/$chapter'
+      path: '/chapter/$subject/$chapter'
+      fullPath: '/chapter/$subject/$chapter'
+      preLoaderRoute: typeof ChapterSubjectChapterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BookmarksRoute: BookmarksRoute,
+  CompanionRoute: CompanionRoute,
+  SearchRoute: SearchRoute,
+  ToolsRoute: ToolsRoute,
   ApiAnalyzeRoute: ApiAnalyzeRoute,
   ApiDiagramImageRoute: ApiDiagramImageRoute,
+  SubjectsSlugRoute: SubjectsSlugRoute,
+  ChapterSubjectChapterRoute: ChapterSubjectChapterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
