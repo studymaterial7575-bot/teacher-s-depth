@@ -81,17 +81,19 @@ export function AppShell({
 
       <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-4">{children}</main>
 
-      {/* Floating action button */}
+      {/* Floating action button — positioned above bottom nav on mobile */}
       <Link
         to="/tools"
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] transition hover:scale-105"
+        className="fixed bottom-[4.5rem] right-4 z-40 flex items-center gap-2 rounded-full px-3 py-2.5 text-xs font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] transition hover:scale-105 md:bottom-5 md:right-5 md:px-4 md:py-3 md:text-sm"
         style={{ background: "var(--gradient-primary)" }}
       >
         <Compass size={16} /> Study Tools
       </Link>
 
-      {/* Bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/80 backdrop-blur-xl md:hidden">
+      {/* Bottom nav with safe-area padding */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/80 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl md:hidden"
+      >
         <div className="mx-auto grid max-w-3xl grid-cols-4 px-4">
           <NavItem to="/" icon={Home} label="Home" />
           <NavItem to="/bookmarks" icon={Bookmark} label="Saved" />
