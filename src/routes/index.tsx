@@ -81,6 +81,9 @@ function Index() {
     <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col px-4 pb-10 pt-6">
       <header className="mb-5 flex items-center justify-between">
         <div>
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
+            Welcome
+          </p>
           <h1 className="text-xl font-bold tracking-tight text-foreground">
             Teacher <span className="text-primary">Companion</span>
           </h1>

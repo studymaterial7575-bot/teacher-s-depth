@@ -1,0 +1,1 @@
+Add a "Welcome" greeting line above the "Teacher Companion" title in the header of `src/routes/index.tsx`. Style it with a warm, welcoming look using the existing design tokens (muted-foreground color, small uppercase tracking).
