@@ -3,21 +3,26 @@ import { useEffect, useState } from "react";
 const isBrowser = typeof window !== "undefined";
 
 export function useLocalStorage<T>(key: string, initial: T) {
-  const [value, setValue] = useState<T>(() => {
-    if (!isBrowser) return initial;
-    try {
-      const raw = window.localStorage.getItem(key);
-      return raw ? (JSON.parse(raw) as T) : initial;
-    } catch {
-      return initial;
-    }
-  });
+  // Always start with `initial` so SSR and the first client render match.
+  // Hydrate from localStorage in an effect after mount to avoid hydration
+  // mismatch warnings.
+  const [value, setValue] = useState<T>(initial);
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     if (!isBrowser) return;
     try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) setValue(JSON.parse(raw) as T);
+    } catch {}
+    setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  useEffect(() => {
+    if (!isBrowser || !hydrated) return;
+    try {
       window.localStorage.setItem(key, JSON.stringify(value));
     } catch {}
-  }, [key, value]);
+  }, [key, value, hydrated]);
   return [value, setValue] as const;
 }
 
