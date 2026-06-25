@@ -1,10 +1,12 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Bookmark, BookmarkCheck, Check, ChevronRight, NotebookPen } from "lucide-react";
+import { Bookmark, BookmarkCheck, Check, NotebookPen } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Stars } from "@/components/Stars";
 import { TeacherNoteCard } from "@/components/TeacherNoteCard";
-import { findChapter, getSubject } from "@/lib/data";
+import { ChapterNavigation } from "@/components/chapter/ChapterNavigation";
+import { FormulaCard } from "@/components/chapter/FormulaCard";
+import { CHAPTERS, findChapter, getSubject } from "@/lib/data";
 import {
   STORAGE_KEYS,
   pushRecent,
@@ -89,6 +91,9 @@ function ChapterPage() {
   const isBookmarked = (id: string) => bookmarks.some((b) => b.id === id);
 
   const chapterBmId = `chapter:${chapter.id}`;
+  const chapterIndex = CHAPTERS.findIndex((c) => c.id === chapter.id);
+  const previousChapter = chapterIndex > 0 ? CHAPTERS[chapterIndex - 1] : undefined;
+  const nextChapter = chapterIndex >= 0 && chapterIndex < CHAPTERS.length - 1 ? CHAPTERS[chapterIndex + 1] : undefined;
 
   function addNote() {
     if (!draft.trim()) return;
@@ -131,7 +136,6 @@ function ChapterPage() {
       <h1 className="text-3xl font-black tracking-tight text-foreground">{chapter.title}</h1>
       <p className="mt-1 text-sm text-muted-foreground">{chapter.summary}</p>
 
-      {/* Tabs */}
       <div className="-mx-4 mt-5 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex gap-2">
           {TABS.map((t, i) => (
@@ -198,32 +202,21 @@ function ChapterPage() {
             {chapter.formulas.map((f) => {
               const id = `formula:${chapter.id}:${f.id}`;
               return (
-                <div key={f.id} className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs uppercase tracking-[0.18em] text-primary">{f.title}</div>
-                      <div className="mt-1 font-mono text-base text-foreground">{f.expression}</div>
-                    </div>
-                    <button
-                      onClick={() =>
-                        toggleBookmark({
-                          id,
-                          kind: "formula",
-                          title: f.title,
-                          subtitle: chapter.title,
-                          href: `/chapter/${chapter.subject}/${chapter.id}`,
-                        })
-                      }
-                      className="text-muted-foreground hover:text-primary"
-                    >
-                      {isBookmarked(id) ? <BookmarkCheck size={16} className="text-primary" /> : <Bookmark size={16} />}
-                    </button>
-                  </div>
-                  <p className="mt-3 rounded-xl bg-background/40 p-3 text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">Why this formula? </span>
-                    {f.meaning}
-                  </p>
-                </div>
+                <FormulaCard
+                  key={f.id}
+                  formula={f}
+                  chapterId={chapter.id}
+                  isBookmarked={isBookmarked(id)}
+                  onBookmarkToggle={() =>
+                    toggleBookmark({
+                      id,
+                      kind: "formula",
+                      title: f.title,
+                      subtitle: chapter.title,
+                      href: `/chapter/${chapter.subject}/${chapter.id}`,
+                    })
+                  }
+                />
               );
             })}
             {chapter.teacherNotes
@@ -297,7 +290,7 @@ function ChapterPage() {
               <ul className="space-y-2 text-sm text-foreground">
                 {chapter.revision.map((r, i) => (
                   <li key={i} className="flex gap-2">
-                    <ChevronRight size={16} className="mt-0.5 shrink-0 text-primary" />
+                    <Check size={16} className="mt-0.5 shrink-0 text-primary" />
                     <span>{r}</span>
                   </li>
                 ))}
@@ -317,7 +310,7 @@ function ChapterPage() {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Jot anything you don't want to forget…"
-                className="min-h-[80px] w-full resize-y rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                className="min-h-[80px] w-full resize-y rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               />
               <div className="mt-2 flex justify-end">
                 <button
@@ -349,13 +342,16 @@ function ChapterPage() {
         )}
       </section>
 
-      <div className="mt-8 flex justify-between text-xs text-muted-foreground">
-        <Link to="/subjects/$slug" params={{ slug: subject.key }} className="hover:text-foreground">
-          ← All {subject.name} chapters
-        </Link>
-        <Link to="/companion" className="hover:text-foreground">
-          Ask AI about this →
-        </Link>
+      <div className="mt-8 space-y-3">
+        <ChapterNavigation previousChapter={previousChapter} nextChapter={nextChapter} subject={subject} />
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <Link to="/subjects/$slug" params={{ slug: subject.key }} className="hover:text-foreground">
+            ← All {subject.name} chapters
+          </Link>
+          <Link to="/companion" className="hover:text-foreground">
+            Ask AI about this →
+          </Link>
+        </div>
       </div>
     </AppShell>
   );
