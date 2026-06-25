@@ -26,8 +26,9 @@ export function FormulaCard({
         </div>
         <button
           onClick={onBookmarkToggle}
-          className="shrink-0 text-muted-foreground hover:text-primary transition"
+          className="shrink-0 text-muted-foreground transition hover:text-primary"
           aria-label={isBookmarked ? "Remove bookmark" : "Add bookmark"}
+          data-chapter-id={chapterId}
         >
           {isBookmarked ? (
             <BookmarkCheck size={16} className="text-primary" />
@@ -37,22 +38,15 @@ export function FormulaCard({
         </button>
       </div>
 
-      {/* Meaning section - collapsible */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="mt-3 w-full flex items-center justify-between gap-2 rounded-xl bg-background/40 p-3 text-xs text-muted-foreground hover:text-foreground transition"
+        className="mt-3 flex w-full items-center justify-between gap-2 rounded-xl bg-background/40 p-3 text-xs text-muted-foreground transition hover:text-foreground"
       >
         <div className="text-left">
           <span className="font-semibold text-foreground">Why this formula?</span>
-          {!expanded && (
-            <p className="mt-1 line-clamp-1">{formula.meaning}</p>
-          )}
+          {!expanded && <p className="mt-1 line-clamp-1">{formula.meaning}</p>}
         </div>
-        {expanded ? (
-          <ChevronUp size={14} className="shrink-0" />
-        ) : (
-          <ChevronDown size={14} className="shrink-0" />
-        )}
+        {expanded ? <ChevronUp size={14} className="shrink-0" /> : <ChevronDown size={14} className="shrink-0" />}
       </button>
 
       {expanded && (
