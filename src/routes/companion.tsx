@@ -33,7 +33,9 @@ function CompanionPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function analyze() {
-    setLoading(true); setError(null); setResult(null);
+    setLoading(true);
+    setError(null);
+    setResult(null);
     try {
       const payloadFiles = await Promise.all(
         files.map(async (f) => ({
@@ -49,8 +51,10 @@ function CompanionPage() {
       });
       if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
       setResult((await res.json()) as AnalysisResult);
-    } catch (e: any) {
-      setError(e.message || "Something went wrong.");
+    } catch (e: unknown) {
+      const errorMessage =
+        e instanceof Error ? e.message : typeof e === "string" ? e : "Something went wrong.";
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -150,7 +154,7 @@ function CompanionPage() {
 
       {result && (
         <>
-          <button onClick={() => { setResult(null); setFiles([]); setText(""); }} className="mb-3 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs text-secondary-foreground hover:bg-secondary/70">
+          <button onClick={() => { setResult(null); setFiles([]); setText(""); }} className="mb-3 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs text-secondary-foreground hove[...]
             New analysis
           </button>
           <ResultTabs result={result} />
