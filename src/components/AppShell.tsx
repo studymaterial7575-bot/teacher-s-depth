@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bookmark, Compass, Home, Search, Sparkles, Timer } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode, type ComponentType, type SVGProps } from "react";
 
 export function AppShell({
   children,
@@ -22,7 +22,7 @@ export function AppShell({
         className="pointer-events-none fixed inset-0 -z-10 opacity-70"
         style={{
           background:
-            "radial-gradient(60% 40% at 20% 0%, color-mix(in oklab, var(--primary) 22%, transparent), transparent 70%), radial-gradient(50% 35% at 90% 10%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 70%)",
+            "radial-gradient(60% 40% at 20% 0%, color-mix(in oklab, var(--primary) 22%, transparent), transparent 70%), radial-gradient(50% 35% at 90% 10%, color-mix(in oklab, var(--accent) 22%, t[...]
         }}
       />
 
@@ -84,7 +84,7 @@ export function AppShell({
       {/* Floating action button — positioned above bottom nav on mobile */}
       <Link
         to="/tools"
-        className="fixed bottom-[4.5rem] right-4 z-40 flex items-center gap-2 rounded-full px-3 py-2.5 text-xs font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] transition hover:scale-105 md:bottom-5 md:right-5 md:px-4 md:py-3 md:text-sm"
+        className="fixed bottom-[4.5rem] right-4 z-40 flex items-center gap-2 rounded-full px-3 py-2.5 text-xs font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] transition hover[...]
         style={{ background: "var(--gradient-primary)" }}
       >
         <Compass size={16} /> Study Tools
@@ -105,7 +105,15 @@ export function AppShell({
   );
 }
 
-function NavItem({ to, icon: Icon, label }: { to: string; icon: any; label: string }) {
+function NavItem({
+  to,
+  icon: Icon,
+  label,
+}: {
+  to: string;
+  icon: ComponentType<SVGProps<SVGSVGElement> & { size?: number | string }>;
+  label: string;
+}) {
   return (
     <a
       href={to}
