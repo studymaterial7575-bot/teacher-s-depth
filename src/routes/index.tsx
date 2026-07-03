@@ -6,6 +6,14 @@ import { Stars } from "@/components/Stars";
 import { CHAPTERS, SUBJECTS } from "@/lib/data";
 import { STORAGE_KEYS, useLocalStorage, type Progress, type Recent } from "@/lib/storage";
 
+const MOTIVATIONAL_QUOTES = [
+  "Small daily effort becomes big results.",
+  "Consistency beats intensity.",
+  "Understand deeply, then speed follows.",
+  "One focused session can change your rank.",
+  "Progress, not perfection, every day.",
+] as const;
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -42,6 +50,8 @@ function Index() {
     ? CHAPTERS.find((c) => c.id === recents[0].id)
     : CHAPTERS[0];
   const recentChapters = CHAPTERS.slice(0, 4);
+  const quoteIndex = Math.abs(new Date().toDateString().split("").reduce((a, c) => a + c.charCodeAt(0), 0)) % MOTIVATIONAL_QUOTES.length;
+  const quote = MOTIVATIONAL_QUOTES[quoteIndex];
 
   return (
     <AppShell>
@@ -56,6 +66,11 @@ function Index() {
         <p className="mt-2 max-w-lg text-sm text-muted-foreground">
           Built for CBSE, ICSE and IGCSE — every chapter explained the way a great teacher would.
         </p>
+      </section>
+
+      <section className="mb-8 rounded-2xl border border-border bg-card/70 p-4 backdrop-blur">
+        <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Today’s Motivation</p>
+        <p className="mt-2 text-sm font-semibold text-foreground">“{quote}”</p>
       </section>
 
       {/* Quick start */}
