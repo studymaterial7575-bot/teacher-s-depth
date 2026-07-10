@@ -53,7 +53,13 @@ function parseModelJson(content: string): unknown {
     return JSON.parse(normalized);
   } catch {
     const match = normalized.match(/\{[\s\S]*\}/);
-    return match ? JSON.parse(match[0]) : { error: "json_parse_failed", raw: content };
+    return match
+      ? JSON.parse(match[0])
+      : {
+          error: "parse_failed",
+          message: "Failed to parse JSON response from model",
+          raw: content,
+        };
   }
 }
 
@@ -178,7 +184,7 @@ JSON schema:
             .join("")
             .trim() ?? "{}";
 
-        return Response.json(parseModelJson(content || "{}"));
+        return Response.json(parseModelJson(content));
       },
     },
   },
