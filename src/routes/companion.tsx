@@ -154,7 +154,14 @@ function CompanionPage() {
 
       {result && (
         <>
-          <button onClick={() => { setResult(null); setFiles([]); setText(""); }} className="mb-3 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs text-secondary-foreground hove[...]
+          <button
+            onClick={() => {
+              setResult(null);
+              setFiles([]);
+              setText("");
+            }}
+            className="mb-3 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs text-secondary-foreground transition hover:bg-secondary/70"
+          >
             New analysis
           </button>
           <ResultTabs result={result} />
