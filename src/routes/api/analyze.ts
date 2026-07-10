@@ -4,8 +4,8 @@ export const Route = createFileRoute("/api/analyze")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const key = process.env.LOVABLE_API_KEY;
-        if (!key) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
+        const key = process.env.GEMINI_API_KEY;
+        if (!key) return new Response("Missing GEMINI_API_KEY", { status: 500 });
 
         const body = (await request.json()) as {
           subject: string;
@@ -70,52 +70,41 @@ JSON schema:
   "videos": [ { "title": string, "query": string } ]
 }`;
 
-        const userContent: any[] = [];
-        if (text.trim()) userContent.push({ type: "text", text: `Teacher note: ${text}` });
-        userContent.push({
-          type: "text",
+        const parts: { text: string }[] = [];
+        if (text.trim()) parts.push({ text: `Teacher note: ${text}` });
+        parts.push({
           text: `Analyze the attached material for subject "${subject}". Produce all 7 sections.`,
         });
+        const fileParts: object[] = [];
         for (const f of files) {
-          if (f.mime.startsWith("image/")) {
-            userContent.push({ type: "image_url", image_url: { url: f.dataUrl } });
-          } else if (f.mime === "application/pdf") {
-            userContent.push({
-              type: "file",
-              file: { filename: f.name, file_data: f.dataUrl },
-            });
-          }
+          const base64 = f.dataUrl.includes(",") ? f.dataUrl.split(",")[1] : f.dataUrl;
+          fileParts.push({ inlineData: { mimeType: f.mime, data: base64 } });
         }
-        if (userContent.length === 1 && !text.trim()) {
-          userContent.push({
-            type: "text",
+        if (fileParts.length === 0 && !text.trim()) {
+          parts.push({
             text: `No file uploaded. Pick a likely common ${subject} topic for an Indian school classroom and produce a model lesson.`,
           });
         }
 
-        const upstream = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
-            "X-Lovable-AIG-SDK": "raw-fetch",
+        const upstream = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              contents: [{ role: "user", parts: [...parts, ...fileParts] }],
+              generationConfig: { responseMimeType: "application/json" },
+            }),
           },
-          body: JSON.stringify({
-            model: "google/gemini-3-flash-preview",
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userContent },
-            ],
-            response_format: { type: "json_object" },
-          }),
-        });
+        );
 
         if (!upstream.ok) {
           const errText = await upstream.text();
           return new Response(errText, { status: upstream.status });
         }
         const data = (await upstream.json()) as any;
-        const content = data.choices?.[0]?.message?.content ?? "{}";
+        const content: string = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
         let parsed: any;
         try {
           parsed = JSON.parse(content);
