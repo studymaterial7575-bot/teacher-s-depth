@@ -1,18 +1,36 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+type UploadFile = { name: string; mime: string; dataUrl: string };
+type AnalyzeRequestBody = { subject: string; text?: string; files?: UploadFile[] };
+type GeminiPart = { text?: string; inlineData?: { mimeType?: string; data?: string } };
+type GeminiResponse = { candidates?: { content?: { parts?: GeminiPart[] } }[] };
+
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+function dataUrlToInlineData(dataUrl: string, fallbackMime: string) {
+  const [meta = "", data = ""] = dataUrl.split(",", 2);
+  const mimeType = meta.match(/^data:(.*?);base64$/)?.[1] ?? fallbackMime;
+  return { mimeType, data };
+}
+
+function extractCandidateText(data: GeminiResponse) {
+  return (
+    data.candidates
+      ?.flatMap((candidate) => candidate.content?.parts ?? [])
+      .map((part) => part.text ?? "")
+      .join("")
+      .trim() ?? ""
+  );
+}
+
 export const Route = createFileRoute("/api/analyze")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const key = process.env.LOVABLE_API_KEY;
-        if (!key) return new Response("Missing LOVABLE_API_KEY", { status: 500 });
+        const key = process.env.GEMINI_API_KEY;
+        if (!key) return new Response("Missing GEMINI_API_KEY", { status: 500 });
 
-        const body = (await request.json()) as {
-          subject: string;
-          text?: string;
-          files?: { name: string; mime: string; dataUrl: string }[];
-        };
-
+        const body = (await request.json()) as AnalyzeRequestBody;
         const { subject, text = "", files = [] } = body;
 
         const systemPrompt = `You are "Teacher Companion", a supplementary depth engine for school teachers in India.
@@ -34,7 +52,7 @@ Section rules:
 - Common Doubts: predict 3-5 common student doubts and answer them crisply.
 - Similar Examples: Easy, Moderate, Board-level practice questions with brief answers.
 - Videos: suggest 4 specific YouTube search queries (English or Hinglish) most likely to find good explainers. Include a short title for each.
-- Keep everything concise but pedagogically rich. Plain text with line breaks (\\n) — no markdown headings.
+- Keep everything concise but pedagogically rich. Plain text with line breaks (\n) — no markdown headings.
 - If the input is unclear, infer the likely textbook topic from the subject and visible content; still produce all sections.
 
 Importance rating (REQUIRED, applies to the whole question/topic):
@@ -70,60 +88,60 @@ JSON schema:
   "videos": [ { "title": string, "query": string } ]
 }`;
 
-        const userContent: any[] = [];
-        if (text.trim()) userContent.push({ type: "text", text: `Teacher note: ${text}` });
-        userContent.push({
-          type: "text",
+        const userParts: GeminiPart[] = [];
+
+        if (text.trim()) {
+          userParts.push({ text: `Teacher note: ${text}` });
+        }
+
+        userParts.push({
           text: `Analyze the attached material for subject "${subject}". Produce all 7 sections.`,
         });
-        for (const f of files) {
-          if (f.mime.startsWith("image/")) {
-            userContent.push({ type: "image_url", image_url: { url: f.dataUrl } });
-          } else if (f.mime === "application/pdf") {
-            userContent.push({
-              type: "file",
-              file: { filename: f.name, file_data: f.dataUrl },
+
+        for (const file of files) {
+          if (file.mime.startsWith("image/") || file.mime === "application/pdf") {
+            userParts.push({
+              inlineData: dataUrlToInlineData(file.dataUrl, file.mime),
             });
           }
         }
-        if (userContent.length === 1 && !text.trim()) {
-          userContent.push({
-            type: "text",
+
+        if (userParts.length === 1 && !text.trim()) {
+          userParts.push({
             text: `No file uploaded. Pick a likely common ${subject} topic for an Indian school classroom and produce a model lesson.`,
           });
         }
 
-        const upstream = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        const upstream = await fetch(GEMINI_API_URL, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${key}`,
             "Content-Type": "application/json",
-            "X-Lovable-AIG-SDK": "raw-fetch",
+            "x-goog-api-key": key,
           },
           body: JSON.stringify({
-            model: "google/gemini-3-flash-preview",
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userContent },
-            ],
-            response_format: { type: "json_object" },
+            systemInstruction: {
+              parts: [{ text: systemPrompt }],
+            },
+            contents: [{ role: "user", parts: userParts }],
+            generationConfig: {
+              responseMimeType: "application/json",
+            },
           }),
         });
 
         if (!upstream.ok) {
-          const errText = await upstream.text();
-          return new Response(errText, { status: upstream.status });
+          return new Response(await upstream.text(), { status: upstream.status });
         }
-        const data = (await upstream.json()) as any;
-        const content = data.choices?.[0]?.message?.content ?? "{}";
-        let parsed: any;
+
+        const data = (await upstream.json()) as GeminiResponse;
+        const content = extractCandidateText(data) || "{}";
+
         try {
-          parsed = JSON.parse(content);
+          return Response.json(JSON.parse(content));
         } catch {
-          const m = content.match(/\{[\s\S]*\}/);
-          parsed = m ? JSON.parse(m[0]) : { error: "parse_failed", raw: content };
+          const match = content.match(/\{[\s\S]*\}/);
+          return Response.json(match ? JSON.parse(match[0]) : { error: "parse_failed", raw: content });
         }
-        return Response.json(parsed);
       },
     },
   },
