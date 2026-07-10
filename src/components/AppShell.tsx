@@ -22,7 +22,7 @@ export function AppShell({
         className="pointer-events-none fixed inset-0 -z-10 opacity-70"
         style={{
           background:
-            "radial-gradient(60% 40% at 20% 0%, color-mix(in oklab, var(--primary) 22%, transparent), transparent 70%), radial-gradient(50% 35% at 90% 10%, color-mix(in oklab, var(--accent) 22%, t[...]
+            "radial-gradient(60% 40% at 20% 0%, color-mix(in oklab, var(--primary) 22%, transparent), transparent 70%), radial-gradient(50% 35% at 90% 10%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 72%)"
         }}
       />
 
@@ -84,7 +84,7 @@ export function AppShell({
       {/* Floating action button — positioned above bottom nav on mobile */}
       <Link
         to="/tools"
-        className="fixed bottom-[4.5rem] right-4 z-40 flex items-center gap-2 rounded-full px-3 py-2.5 text-xs font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] transition hover[...]
+        className="fixed bottom-[4.5rem] right-4 z-40 flex items-center gap-2 rounded-full px-3 py-2.5 text-xs font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] transition hover:opacity-90"
         style={{ background: "var(--gradient-primary)" }}
       >
         <Compass size={16} /> Study Tools
