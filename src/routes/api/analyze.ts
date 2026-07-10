@@ -77,7 +77,9 @@ JSON schema:
         });
         for (const f of files) {
           if (f.mime.startsWith("image/") || f.mime === "application/pdf") {
-            const base64 = f.dataUrl.split(",")[1] ?? f.dataUrl;
+            const commaIdx = f.dataUrl.indexOf(",");
+            if (commaIdx === -1) continue;
+            const base64 = f.dataUrl.slice(commaIdx + 1);
             parts.push({ inlineData: { mimeType: f.mime, data: base64 } });
           }
         }
@@ -88,10 +90,10 @@ JSON schema:
         }
 
         const upstream = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
             body: JSON.stringify({
               system_instruction: { parts: [{ text: systemPrompt }] },
               contents: [{ role: "user", parts }],
