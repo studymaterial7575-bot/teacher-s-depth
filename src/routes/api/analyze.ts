@@ -45,7 +45,10 @@ function toInlineDataPart(file: AnalyzeRequestFile): GeminiPart | null {
 }
 
 function parseModelJson(content: string): unknown {
-  const normalized = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const normalized = content
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "");
   try {
     return JSON.parse(normalized);
   } catch {
