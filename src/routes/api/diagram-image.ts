@@ -22,11 +22,12 @@ export const Route = createFileRoute("/api/diagram-image")({
         const { prompt } = (await request.json()) as { prompt: string };
 
         const upstream = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${encodeURIComponent(key)}`,
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent",
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "x-goog-api-key": key,
             },
             body: JSON.stringify({
               contents: [

@@ -45,7 +45,7 @@ function parseJsonContent(content: string): unknown {
       return JSON.parse(noFence);
     } catch {
       const m = noFence.match(/\{[\s\S]*\}/);
-      return m ? JSON.parse(m[0]) : { error: "parse_failed", raw: content };
+      return m ? JSON.parse(m[0]) : { error: "parse_failed" };
     }
   }
 }
@@ -137,11 +137,12 @@ JSON schema:
         }
 
         const upstream = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`,
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              "x-goog-api-key": key,
             },
             body: JSON.stringify({
               systemInstruction: {
