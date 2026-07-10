@@ -53,7 +53,7 @@ function parseModelJson(content: string): unknown {
     return JSON.parse(normalized);
   } catch {
     const match = normalized.match(/\{[\s\S]*\}/);
-    return match ? JSON.parse(match[0]) : { error: "parse_failed", raw: content };
+    return match ? JSON.parse(match[0]) : { error: "json_parse_failed", raw: content };
   }
 }
 
