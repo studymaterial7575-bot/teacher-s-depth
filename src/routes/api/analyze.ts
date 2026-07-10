@@ -78,7 +78,10 @@ JSON schema:
         for (const f of files) {
           if (f.mime.startsWith("image/") || f.mime === "application/pdf") {
             const commaIdx = f.dataUrl.indexOf(",");
-            if (commaIdx === -1) continue;
+            if (commaIdx === -1) {
+              console.warn(`Skipping file ${f.name}: invalid data URL format`);
+              continue;
+            }
             const base64 = f.dataUrl.slice(commaIdx + 1);
             parts.push({ inlineData: { mimeType: f.mime, data: base64 } });
           }
