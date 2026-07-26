@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ToolsRouteImport } from './routes/tools'
+import { Route as TeachingEngineRouteImport } from './routes/teaching-engine'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as CompanionRouteImport } from './routes/companion'
 import { Route as BookmarksRouteImport } from './routes/bookmarks'
@@ -22,6 +23,11 @@ import { Route as ChapterSubjectChapterRouteImport } from './routes/chapter.$sub
 const ToolsRoute = ToolsRouteImport.update({
   id: '/tools',
   path: '/tools',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TeachingEngineRoute = TeachingEngineRouteImport.update({
+  id: '/teaching-engine',
+  path: '/teaching-engine',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SearchRoute = SearchRouteImport.update({
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/bookmarks': typeof BookmarksRoute
   '/companion': typeof CompanionRoute
   '/search': typeof SearchRoute
+  '/teaching-engine': typeof TeachingEngineRoute
   '/tools': typeof ToolsRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/diagram-image': typeof ApiDiagramImageRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/bookmarks': typeof BookmarksRoute
   '/companion': typeof CompanionRoute
   '/search': typeof SearchRoute
+  '/teaching-engine': typeof TeachingEngineRoute
   '/tools': typeof ToolsRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/diagram-image': typeof ApiDiagramImageRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/bookmarks': typeof BookmarksRoute
   '/companion': typeof CompanionRoute
   '/search': typeof SearchRoute
+  '/teaching-engine': typeof TeachingEngineRoute
   '/tools': typeof ToolsRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/diagram-image': typeof ApiDiagramImageRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/bookmarks'
     | '/companion'
     | '/search'
+    | '/teaching-engine'
     | '/tools'
     | '/api/analyze'
     | '/api/diagram-image'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/bookmarks'
     | '/companion'
     | '/search'
+    | '/teaching-engine'
     | '/tools'
     | '/api/analyze'
     | '/api/diagram-image'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/bookmarks'
     | '/companion'
     | '/search'
+    | '/teaching-engine'
     | '/tools'
     | '/api/analyze'
     | '/api/diagram-image'
@@ -140,6 +152,7 @@ export interface RootRouteChildren {
   BookmarksRoute: typeof BookmarksRoute
   CompanionRoute: typeof CompanionRoute
   SearchRoute: typeof SearchRoute
+  TeachingEngineRoute: typeof TeachingEngineRoute
   ToolsRoute: typeof ToolsRoute
   ApiAnalyzeRoute: typeof ApiAnalyzeRoute
   ApiDiagramImageRoute: typeof ApiDiagramImageRoute
@@ -154,6 +167,13 @@ declare module '@tanstack/react-router' {
       path: '/tools'
       fullPath: '/tools'
       preLoaderRoute: typeof ToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/teaching-engine': {
+      id: '/teaching-engine'
+      path: '/teaching-engine'
+      fullPath: '/teaching-engine'
+      preLoaderRoute: typeof TeachingEngineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/search': {
@@ -220,6 +240,7 @@ const rootRouteChildren: RootRouteChildren = {
   BookmarksRoute: BookmarksRoute,
   CompanionRoute: CompanionRoute,
   SearchRoute: SearchRoute,
+  TeachingEngineRoute: TeachingEngineRoute,
   ToolsRoute: ToolsRoute,
   ApiAnalyzeRoute: ApiAnalyzeRoute,
   ApiDiagramImageRoute: ApiDiagramImageRoute,
