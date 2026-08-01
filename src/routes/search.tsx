@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search as SearchIcon } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { AnalysisResult } from "@/components/companion/types";
 import { CHAPTERS, SUBJECTS } from "@/lib/data";
 
 type SearchParams = { q?: string };
@@ -16,9 +18,27 @@ export const Route = createFileRoute("/search")({
   component: SearchPage,
 });
 
+const ACADEMIC_KEYWORDS = [
+  "what", "why", "how", "when", "where", "which",
+  "explain", "define", "describe", "calculate", "solve",
+  "find", "prove", "derive", "state", "evaluate", "compare",
+  "formula", "equation", "theorem", "law", "principle",
+  "difference between", "example", "types of",
+];
+
+function isAcademicQuestion(text: string): boolean {
+  const lower = text.trim().toLowerCase();
+  if (!lower) return false;
+  if (lower.endsWith("?")) return true;
+  return ACADEMIC_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 function SearchPage() {
   const { q: initial } = Route.useSearch();
   const [q, setQ] = useState(initial ?? "");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<AnalysisResult | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const results = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -41,6 +61,43 @@ function SearchPage() {
     );
     return { chapters, formulas, examples, notes };
   }, [q]);
+
+  const totalLocalResults =
+    results.chapters.length + results.formulas.length + results.examples.length + results.notes.length;
+  const hasNoLocalResults = Boolean(q.trim()) && totalLocalResults === 0;
+  const shouldTriggerAI = hasNoLocalResults && isAcademicQuestion(q);
+
+  useEffect(() => {
+    setAiResult(null);
+    setAiError(null);
+    setAiLoading(false);
+    if (!shouldTriggerAI) return;
+
+    let cancelled = false;
+    setAiLoading(true);
+
+    (async () => {
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject: "General", text: q.trim(), files: [] }),
+        });
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+        if (!cancelled) setAiResult((await res.json()) as AnalysisResult);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setAiError(e instanceof Error ? e.message : "Something went wrong.");
+        }
+      } finally {
+        if (!cancelled) setAiLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [q, shouldTriggerAI]);
 
   return (
     <AppShell back={{ to: "/" }} title="Search everything">
@@ -107,12 +164,82 @@ function SearchPage() {
             ))}
           </ResultGroup>
         )}
-        {q.trim() &&
-          results.chapters.length + results.formulas.length + results.examples.length + results.notes.length === 0 && (
-            <p className="text-sm text-muted-foreground">No matches for “{q}”.</p>
-          )}
+
+        {/* No local results — not an academic question */}
+        {hasNoLocalResults && !shouldTriggerAI && (
+          <p className="text-sm text-muted-foreground">No matches for "{q}".</p>
+        )}
+
+        {/* No local results — academic question: loading */}
+        {shouldTriggerAI && aiLoading && (
+          <div className="space-y-3">
+            <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">AI Analysis</div>
+            <Skeleton className="h-4 w-3/4 rounded-xl" />
+            <Skeleton className="h-4 w-full rounded-xl" />
+            <Skeleton className="h-4 w-5/6 rounded-xl" />
+            <Skeleton className="h-4 w-full rounded-xl" />
+            <Skeleton className="h-4 w-2/3 rounded-xl" />
+          </div>
+        )}
+
+        {/* No local results — academic question: error */}
+        {shouldTriggerAI && !aiLoading && aiError && (
+          <p className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+            {aiError}
+          </p>
+        )}
+
+        {/* No local results — academic question: result */}
+        {shouldTriggerAI && !aiLoading && aiResult && (
+          <AiResultPanel result={aiResult} />
+        )}
       </div>
     </AppShell>
+  );
+}
+
+function AiResultPanel({ result }: { result: AnalysisResult }) {
+  return (
+    <div className="space-y-4">
+      <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">AI Analysis</div>
+      {result.topic && (
+        <div className="text-xs text-muted-foreground">
+          Topic · <span className="text-foreground">{result.topic}</span>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <SectionLabel>Step-by-step Solution</SectionLabel>
+        <div className="whitespace-pre-wrap rounded-2xl border border-border bg-card/60 p-4 text-sm leading-relaxed text-foreground">
+          {result.solution || "—"}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <SectionLabel>Explanation</SectionLabel>
+        <div className="whitespace-pre-wrap rounded-2xl border border-border bg-card/60 p-4 text-sm leading-relaxed text-foreground">
+          {result.why || "—"}
+        </div>
+      </div>
+
+      {(result.topic || result.teacherNote) && (
+        <div className="space-y-2">
+          <SectionLabel>Final Answer</SectionLabel>
+          <div className="rounded-2xl border border-border bg-card/60 p-4 text-sm text-foreground">
+            {result.topic && <div className="font-semibold">{result.topic}</div>}
+            {result.teacherNote && (
+              <div className="mt-1 text-muted-foreground">{result.teacherNote}</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-primary">{children}</div>
   );
 }
 
