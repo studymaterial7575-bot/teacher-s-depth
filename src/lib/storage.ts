@@ -65,6 +65,16 @@ export const STORAGE_KEYS = {
   progress: "td.progress",
   recents: "td.recents",
   language: "td.language",
+  teachingEngineOcrText: "td.teaching-engine.ocr-text",
+  teachingEngineExtracted: "td.teaching-engine.extracted",
+  teachingEngineExtractedItems: "td.teaching-engine.extracted-items",
+  teachingEngineStudentProfile: "td.teaching-engine.student-profile",
+  teachingEngineDepthOptions: "td.teaching-engine.depth-options",
+  teachingEngineVisualStyle: "td.teaching-engine.visual-style",
+  teachingEngineExplanationStyle: "td.teaching-engine.explanation-style",
+  teachingEngineObjective: "td.teaching-engine.objective",
+  teachingEnginePrompt: "td.teaching-engine.prompt",
+  teachingEngineWorkflowStep: "td.teaching-engine.workflow-step",
 } as const;
 
 export type Language = "en" | "hi" | "mr";

@@ -109,6 +109,17 @@ export type TeacherNote = {
 export type Formula = { id: string; title: string; expression: string; meaning: string };
 export type WorkedExample = { id: string; title: string; problem: string; solution: string };
 export type Mistake = { id: string; wrong: string; right: string };
+export type TopicSection = {
+  id: string;
+  title: string;
+  definition: string;
+  formula: string;
+  explanation: string;
+  workedExample: { problem: string; solution: string };
+  commonMistakes: string[];
+  revisionNotes: string[];
+  searchKeywords: string[];
+};
 
 export type Chapter = {
   id: string;
@@ -124,6 +135,8 @@ export type Chapter = {
   mistakes: Mistake[];
   revision: string[];
   teacherNotes: TeacherNote[];
+  searchKeywords?: string[];
+  topicSections?: TopicSection[];
 };
 
 const circleSvg = `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#10b981"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><circle cx="100" cy="60" r="45" fill="none" stroke="url(#g)" stroke-width="3"/><line x1="100" y1="60" x2="145" y2="60" stroke="#fbbf24" stroke-width="2"/><text x="120" y="55" fill="#fbbf24" font-size="12" font-family="sans-serif">r</text><circle cx="100" cy="60" r="3" fill="#fff"/></svg>`;
@@ -131,6 +144,10 @@ const circleSvg = `<svg viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg"
 const triangleSvg = `<svg viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg"><polygon points="30,120 170,120 100,20" fill="none" stroke="#22d3ee" stroke-width="3"/><text x="20" y="135" fill="#94a3b8" font-size="12">B</text><text x="170" y="135" fill="#94a3b8" font-size="12">C</text><text x="95" y="18" fill="#94a3b8" font-size="12">A</text></svg>`;
 
 const atomSvg = `<svg viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg"><circle cx="100" cy="70" r="6" fill="#f472b6"/><ellipse cx="100" cy="70" rx="60" ry="22" fill="none" stroke="#a78bfa" stroke-width="2"/><ellipse cx="100" cy="70" rx="60" ry="22" fill="none" stroke="#22d3ee" stroke-width="2" transform="rotate(60 100 70)"/><ellipse cx="100" cy="70" rx="60" ry="22" fill="none" stroke="#34d399" stroke-width="2" transform="rotate(120 100 70)"/></svg>`;
+
+const circuitSvg = `<svg viewBox="0 0 240 120" xmlns="http://www.w3.org/2000/svg"><rect x="16" y="28" width="34" height="64" rx="8" fill="none" stroke="#fbbf24" stroke-width="3"/><line x1="33" y1="36" x2="33" y2="84" stroke="#fbbf24" stroke-width="3"/><line x1="50" y1="60" x2="84" y2="60" stroke="#22d3ee" stroke-width="3"/><path d="M84 60h20l8-12 16 24 16-24 16 24 8-12h20" fill="none" stroke="#34d399" stroke-width="3" stroke-linejoin="round"/><line x1="188" y1="60" x2="224" y2="60" stroke="#22d3ee" stroke-width="3"/><line x1="224" y1="60" x2="224" y2="92" stroke="#22d3ee" stroke-width="3"/><line x1="224" y1="92" x2="33" y2="92" stroke="#22d3ee" stroke-width="3"/><text x="22" y="22" fill="#fbbf24" font-size="12">Battery</text><text x="102" y="38" fill="#34d399" font-size="12">Resistor</text><text x="138" y="106" fill="#94a3b8" font-size="12">Closed circuit</text></svg>`;
+
+const parallelSvg = `<svg viewBox="0 0 240 140" xmlns="http://www.w3.org/2000/svg"><line x1="20" y1="24" x2="20" y2="116" stroke="#fbbf24" stroke-width="3"/><line x1="30" y1="34" x2="30" y2="106" stroke="#fbbf24" stroke-width="2"/><line x1="30" y1="46" x2="76" y2="46" stroke="#22d3ee" stroke-width="3"/><line x1="30" y1="94" x2="76" y2="94" stroke="#22d3ee" stroke-width="3"/><line x1="76" y1="46" x2="76" y2="94" stroke="#22d3ee" stroke-width="3"/><path d="M76 46h26l8-10 14 20 14-20 8 10h26" fill="none" stroke="#34d399" stroke-width="3" stroke-linejoin="round"/><path d="M76 94h26l8-10 14 20 14-20 8 10h26" fill="none" stroke="#a78bfa" stroke-width="3" stroke-linejoin="round"/><line x1="172" y1="46" x2="220" y2="46" stroke="#22d3ee" stroke-width="3"/><line x1="172" y1="94" x2="220" y2="94" stroke="#22d3ee" stroke-width="3"/><line x1="220" y1="46" x2="220" y2="94" stroke="#22d3ee" stroke-width="3"/><text x="48" y="18" fill="#94a3b8" font-size="12">Parallel branches</text><text x="102" y="30" fill="#34d399" font-size="12">R1</text><text x="102" y="128" fill="#a78bfa" font-size="12">R2</text></svg>`;
 
 export const CHAPTERS: Chapter[] = [
   {
@@ -250,6 +267,290 @@ export const CHAPTERS: Chapter[] = [
       { kind: "error", text: "Don’t mix Newtons with kilograms in the same line." },
       { kind: "exam", text: "Pulley + incline questions repeat almost every year." },
       { kind: "why", text: "Without Newton’s laws there is no engineering — bridges, cars, rockets all use them." },
+    ],
+  },
+  {
+    id: "physics-electricity",
+    subject: "physics",
+    title: "Electricity",
+    summary: "Class 9 and 10 electricity fundamentals: current, resistance, circuits, power and heating effect.",
+    importance: 5,
+    overview:
+      "Electricity studies how charges move in a closed path and how that movement transfers energy. For Class 9 and Class 10 students, this chapter connects daily devices like bulbs, heaters, chargers and household wiring with current, voltage, resistance and power.",
+    deepUnderstanding:
+      "Think of electric current as a steady flow of charges through a wire, pushed by potential difference and opposed by resistance. The same battery can give different currents depending on the material, length and thickness of the wire, and the way components are connected in series or parallel decides how a circuit behaves in real life.",
+    visualBreakdown: [
+      { title: "Simple circuit", description: "A battery, connecting wire and resistor form a complete path so current can flow.", svg: circuitSvg },
+      { title: "Parallel branches", description: "Parallel circuits give each branch the same voltage while allowing current to split.", svg: parallelSvg },
+    ],
+    formulas: [
+      {
+        id: "f1",
+        title: "Ohm’s Law",
+        expression: "V = I R",
+        meaning: "At constant temperature, potential difference across a conductor is directly proportional to current through it.",
+      },
+      {
+        id: "f2",
+        title: "Resistance from Ohm’s law",
+        expression: "R = V / I",
+        meaning: "Resistance tells how strongly a conductor opposes current. Higher resistance means less current for the same voltage.",
+      },
+      {
+        id: "f3",
+        title: "Resistivity relation",
+        expression: "R = ρL / A",
+        meaning: "Resistance depends on the material resistivity ρ, wire length L and cross-sectional area A.",
+      },
+      {
+        id: "f4",
+        title: "Series combination",
+        expression: "Rseries = R1 + R2 + R3 + ...",
+        meaning: "In series, current stays the same through each resistor and total resistance adds up.",
+      },
+      {
+        id: "f5",
+        title: "Parallel combination",
+        expression: "1 / Rparallel = 1 / R1 + 1 / R2 + 1 / R3 + ...",
+        meaning: "In parallel, voltage is the same across each branch and equivalent resistance becomes smaller than the smallest branch resistance.",
+      },
+      {
+        id: "f6",
+        title: "Electric power",
+        expression: "P = V I = I²R = V² / R",
+        meaning: "Power is the rate at which electrical energy is used or converted every second.",
+      },
+      {
+        id: "f7",
+        title: "Heating effect of current",
+        expression: "H = I² R t",
+        meaning: "Joule’s law of heating states that the heat produced in a resistor depends on current, resistance and time.",
+      },
+    ],
+    examples: [
+      {
+        id: "e1",
+        title: "Ohm’s Law: find current",
+        problem: "A 6 V battery is connected across a 3 Ω resistor. Find the current.",
+        solution: "Using I = V/R, I = 6/3 = 2 A. The circuit current is 2 ampere.",
+      },
+      {
+        id: "e2",
+        title: "Resistance from voltage and current",
+        problem: "A conductor carries 0.5 A when connected to 4 V. Calculate resistance.",
+        solution: "R = V/I = 4/0.5 = 8 Ω. The conductor has resistance 8 ohm.",
+      },
+      {
+        id: "e3",
+        title: "Resistivity comparison",
+        problem: "Two wires of the same material have equal area, but one is twice as long. How does resistance change?",
+        solution: "From R = ρL/A, if L doubles and ρ and A stay constant, resistance also doubles.",
+      },
+      {
+        id: "e4",
+        title: "Series circuit total resistance",
+        problem: "Find the equivalent resistance of 2 Ω and 3 Ω connected in series.",
+        solution: "Rseries = 2 + 3 = 5 Ω. Series combination increases total resistance.",
+      },
+      {
+        id: "e5",
+        title: "Parallel circuit equivalent resistance",
+        problem: "Find the equivalent resistance of 6 Ω and 3 Ω connected in parallel.",
+        solution: "1/R = 1/6 + 1/3 = 1/6 + 2/6 = 3/6 = 1/2, so R = 2 Ω.",
+      },
+      {
+        id: "e6",
+        title: "Electric power of an appliance",
+        problem: "An electric iron works at 220 V and draws 5 A. Find its power.",
+        solution: "P = VI = 220 × 5 = 1100 W. So the iron is rated at 1100 watt.",
+      },
+      {
+        id: "e7",
+        title: "Heating effect in a wire",
+        problem: "A 2 Ω resistor carries 3 A for 5 s. Find heat produced.",
+        solution: "H = I²Rt = 3² × 2 × 5 = 9 × 10 = 90 J. Heat produced is 90 joule.",
+      },
+    ],
+    mistakes: [
+      {
+        id: "m1",
+        wrong: "Using V = IR without keeping temperature constant in the idea of Ohm’s law.",
+        right: "Ohm’s law is valid only when physical conditions such as temperature remain constant.",
+      },
+      {
+        id: "m2",
+        wrong: "Confusing resistance with resistivity.",
+        right: "Resistance depends on the object. Resistivity is a material property and does not depend on the wire size.",
+      },
+      {
+        id: "m3",
+        wrong: "Adding resistors directly in parallel as R1 + R2.",
+        right: "For parallel circuits, add reciprocals first: 1/R = 1/R1 + 1/R2 + ...",
+      },
+      {
+        id: "m4",
+        wrong: "Writing power as P = V/R.",
+        right: "Use P = VI, I²R or V²/R depending on the known values.",
+      },
+      {
+        id: "m5",
+        wrong: "Forgetting that heating effect depends on time as well.",
+        right: "Joule heating uses H = I²Rt, so longer time means more heat.",
+      },
+    ],
+    revision: [
+      "Current is the rate of flow of charge: I = Q/t.",
+      "Ohm’s law gives V = IR when temperature is constant.",
+      "Resistance increases with length and decreases with area: R = ρL/A.",
+      "In series, current is same and resistances add. In parallel, voltage is same and equivalent resistance decreases.",
+      "Electric power tells how fast electrical energy is used: P = VI.",
+      "Heating effect follows Joule’s law: H = I²Rt.",
+    ],
+    teacherNotes: [
+      { kind: "tip", text: "Start every circuit question by marking known values of V, I, R, P or t beside the diagram." },
+      { kind: "memory", text: "Ohm’s triangle works well for revision: cover V to get I×R, cover I to get V/R, cover R to get V/I." },
+      { kind: "error", text: "Students often mix up series and parallel rules. Ask: same current or same voltage? That decides the formula." },
+      { kind: "exam", text: "Class 10 board papers repeatedly ask one numeric on equivalent resistance or electric power and one concept question on household wiring." },
+      { kind: "why", text: "Electricity matters because every appliance is designed by balancing useful power output against heat loss in wires and resistors." },
+    ],
+    searchKeywords: [
+      "class 9 electricity",
+      "class 10 electricity",
+      "electric current",
+      "potential difference",
+      "voltage current resistance",
+      "ohms law",
+      "resistance formula",
+      "resistivity meaning",
+      "series circuit",
+      "parallel circuit",
+      "equivalent resistance",
+      "electric power formula",
+      "joules law heating",
+      "heating effect of current",
+      "cbse electricity chapter",
+    ],
+    topicSections: [
+      {
+        id: "t1",
+        title: "Ohm's Law",
+        definition: "Ohm’s law states that the current through a conductor is directly proportional to the potential difference across it, provided temperature and other physical conditions remain constant.",
+        formula: "V = IR",
+        explanation: "If resistance stays fixed, doubling voltage doubles current. This rule helps predict current in simple circuits and is the base relation for most Class 10 numericals.",
+        workedExample: {
+          problem: "A torch bulb has resistance 4 Ω and is connected to 8 V. Find current.",
+          solution: "I = V/R = 8/4 = 2 A.",
+        },
+        commonMistakes: [
+          "Using Ohm’s law for non-ohmic devices without caution.",
+          "Forgetting that the condition of constant temperature matters.",
+        ],
+        revisionNotes: [
+          "V and I are directly proportional for an ohmic conductor.",
+          "Graph of V against I is a straight line through the origin for an ohmic conductor.",
+        ],
+        searchKeywords: ["ohms law", "ohm law formula", "v ir", "relation between voltage current resistance"],
+      },
+      {
+        id: "t2",
+        title: "Resistance",
+        definition: "Resistance is the opposition offered by a conductor to the flow of electric current.",
+        formula: "R = V/I",
+        explanation: "A higher resistance means charges face more opposition, so less current flows for the same potential difference.",
+        workedExample: {
+          problem: "A resistor draws 2 A from a 12 V battery. Find its resistance.",
+          solution: "R = V/I = 12/2 = 6 Ω.",
+        },
+        commonMistakes: [
+          "Writing the unit of resistance as volt or ampere instead of ohm.",
+          "Assuming thicker wires have more resistance; thicker wires usually have less resistance.",
+        ],
+        revisionNotes: [
+          "Unit of resistance is ohm (Ω).",
+          "Longer wires have more resistance; thicker wires have less resistance.",
+        ],
+        searchKeywords: ["resistance definition", "resistance formula", "ohm unit", "factors affecting resistance"],
+      },
+      {
+        id: "t3",
+        title: "Resistivity",
+        definition: "Resistivity is the intrinsic property of a material that tells how strongly it resists current.",
+        formula: "ρ = RA/L",
+        explanation: "Resistivity depends on the material, not on the shape of a particular sample. Copper has low resistivity, while alloys like nichrome have higher resistivity and are used in heaters.",
+        workedExample: {
+          problem: "A wire has resistance 10 Ω, length 2 m and area 0.5 m². Find resistivity.",
+          solution: "ρ = RA/L = 10 × 0.5 / 2 = 2.5 Ω m.",
+        },
+        commonMistakes: [
+          "Mixing resistance and resistivity in words and units.",
+          "Forgetting that resistivity is a material property.",
+        ],
+        revisionNotes: [
+          "Resistivity unit is ohm metre (Ω m).",
+          "Nichrome has high resistivity and high melting point, so it is used in heating devices.",
+        ],
+        searchKeywords: ["resistivity formula", "rho ra by l", "difference between resistance and resistivity", "nichrome resistivity"],
+      },
+      {
+        id: "t4",
+        title: "Series and Parallel Circuits",
+        definition: "In a series circuit components are connected one after another in a single path; in a parallel circuit components are connected across the same two points in separate branches.",
+        formula: "Rseries = R1 + R2 + ... ; 1/Rparallel = 1/R1 + 1/R2 + ...",
+        explanation: "Series circuits share the same current through every component, while parallel circuits share the same voltage across each branch. Homes use parallel wiring so appliances work independently.",
+        workedExample: {
+          problem: "Two resistors 4 Ω and 6 Ω are connected in parallel. Find equivalent resistance.",
+          solution: "1/R = 1/4 + 1/6 = 3/12 + 2/12 = 5/12, so R = 12/5 = 2.4 Ω.",
+        },
+        commonMistakes: [
+          "Using series addition for a parallel network.",
+          "Saying current is always the same in parallel branches; current splits in parallel.",
+        ],
+        revisionNotes: [
+          "Series: same current, different voltage drops.",
+          "Parallel: same voltage, split current.",
+        ],
+        searchKeywords: ["series circuit formula", "parallel circuit formula", "equivalent resistance", "house wiring parallel"],
+      },
+      {
+        id: "t5",
+        title: "Electric Power",
+        definition: "Electric power is the rate at which electrical energy is consumed or converted into other forms of energy.",
+        formula: "P = VI",
+        explanation: "A 100 W bulb converts 100 joule of electrical energy every second. The rating of an appliance tells how much power it uses at its correct voltage.",
+        workedExample: {
+          problem: "A fan works on 220 V and draws 0.5 A. Find power.",
+          solution: "P = VI = 220 × 0.5 = 110 W.",
+        },
+        commonMistakes: [
+          "Confusing power with electrical energy.",
+          "Using watt-hour as a unit of power; it is a unit of energy.",
+        ],
+        revisionNotes: [
+          "Unit of power is watt (W).",
+          "1 kilowatt = 1000 watt.",
+        ],
+        searchKeywords: ["electric power", "power formula vi", "watt definition", "appliance rating"],
+      },
+      {
+        id: "t6",
+        title: "Heating Effect of Current",
+        definition: "When electric current passes through a resistor, electrical energy is converted into heat energy.",
+        formula: "H = I²Rt",
+        explanation: "The wire resists moving charges, so collisions inside the conductor produce heat. This effect is useful in irons, heaters, toasters and fuses.",
+        workedExample: {
+          problem: "A heater coil of 10 Ω carries 2 A for 60 s. Find heat produced.",
+          solution: "H = I²Rt = 2² × 10 × 60 = 2400 J.",
+        },
+        commonMistakes: [
+          "Dropping the square on current in Joule’s law.",
+          "Using minutes directly instead of converting time carefully when needed.",
+        ],
+        revisionNotes: [
+          "More current means much more heating because current is squared.",
+          "Fuse wire works by the heating effect of current.",
+        ],
+        searchKeywords: ["heating effect of current", "joules law", "h i square rt", "fuse heating effect"],
+      },
     ],
   },
   {

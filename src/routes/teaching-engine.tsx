@@ -1,186 +1,1085 @@
 ﻿import { createFileRoute } from "@tanstack/react-router";
-import { Clipboard, Upload } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Camera, FileText, Loader2, Sparkles, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { ModuleRecommendations } from "@/components/teaching-engine/ModuleRecommendations";
-import { ModuleSelector } from "@/components/teaching-engine/ModuleSelector";
 import { PromptPreview } from "@/components/teaching-engine/PromptPreview";
-import { QuestionAnalysisCard } from "@/components/teaching-engine/QuestionAnalysis";
-import { QuestionEditor } from "@/components/teaching-engine/QuestionEditor";
-import { DEFAULT_SELECTED_MODULES, MODULES } from "@/lib/teaching-engine/keywordRules";
-import { getRecommendations } from "@/lib/teaching-engine/moduleRecommender";
-import { buildPromptText } from "@/lib/teaching-engine/promptBuilder";
-import { analyzeQuestion } from "@/lib/teaching-engine/questionAnalyzer";
-import type { ModuleName, QuestionAnalysis } from "@/types/teaching-engine";
+import { extractAcademicQuestions } from "@/lib/teaching-engine/academicExtractor";
+import { buildPromptTexts } from "@/lib/teaching-engine/promptBuilder";
+import {
+  clearTeachingEngineFiles,
+  loadTeachingEngineFiles,
+  saveTeachingEngineFiles,
+} from "@/lib/teaching-engine/persistence";
+import { STORAGE_KEYS, useLocalStorage } from "@/lib/storage";
+import {
+  DEPTH_OPTIONS,
+  EXPLANATION_STYLE_OPTIONS,
+  STUDENT_PROFILE_OPTIONS,
+  VISUAL_STYLE_OPTIONS,
+  type DepthOption,
+  type ExplanationStyleOption,
+  type ExtractedContent,
+  type StudentProfileOption,
+  type VisualStyleOption,
+} from "@/types/teaching-engine";
+
+type TeachingEngineSearch = {
+  entry?: "screenshot" | "pdf" | "camera";
+};
+
+type BuildStageId = "ocr" | "question-detection" | "subject-detection" | "metadata" | "prompt-generation";
+type BuildStageStatus = "pending" | "in-progress" | "completed";
+
+type BuildStage = {
+  id: BuildStageId;
+  label: string;
+  status: BuildStageStatus;
+};
+
+type WorkflowStep = "upload" | "ocr" | "profile" | "depth" | "generate" | "preview";
 
 export const Route = createFileRoute("/teaching-engine")({
+  validateSearch: (search: Record<string, unknown>): TeachingEngineSearch => ({
+    entry:
+      search.entry === "screenshot" || search.entry === "pdf" || search.entry === "camera"
+        ? search.entry
+        : undefined,
+  }),
   head: () => ({
     meta: [
-      { title: "Teacher's Teaching Engine — Teacher's Depth" },
-      { name: "description", content: "Create a structured teaching prompt from uploaded material and selected modules." },
+      { title: "Prompt Builder Engine — Teacher's Depth" },
+      {
+        name: "description",
+        content:
+          "Generate structured, high-quality educational prompts for ChatGPT from local teaching inputs.",
+      },
     ],
   }),
   component: RouteComponent,
 });
 
-function RouteComponent() {
-  const [selectedModules, setSelectedModules] = useState<ModuleName[]>(DEFAULT_SELECTED_MODULES);
-  const [hasManualOverride, setHasManualOverride] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [questions, setQuestions] = useState("Paste one or more questions here...\n\nExample:\n1. Find the value of x.\n2. Solve the equation.");
-  const [prompt, setPrompt] = useState(`Subject: [Enter subject]
-Board: [Enter board]
-Class: [Enter class]
-Question: [Enter your question here]
-Objective: [Enter your teaching objective here]
+const DEFAULT_EXTRACTED: ExtractedContent = {
+  ocrText: "",
+  subject: "Not identified",
+  board: "Not identified",
+  classLevel: "Not identified",
+  chapter: "Not identified",
+  topic: "Not identified",
+  questionType: "Not identified",
+  formulae: [],
+  numericalQuestions: [],
+  diagrams: [],
+  keywords: [],
+};
 
-Selected Teaching Modules:
-- None selected
+const DEFAULT_STUDENT_PROFILE: StudentProfileOption[] = ["Average", "Step-by-step explanation"];
+const DEFAULT_DEPTH_OPTIONS: DepthOption[] = ["Definition", "Worked examples", "Common mistakes", "Revision notes"];
+const DEFAULT_VISUAL_STYLE: VisualStyleOption = "Simple labeled diagram";
+const DEFAULT_EXPLANATION_STYLE: ExplanationStyleOption = "Simple classroom language";
+const DEFAULT_OBJECTIVE = "Build a student-friendly explanation that can be directly used in class and for exam preparation.";
 
-Instructions for ChatGPT:
-- Act as a supportive classroom teacher.
-- Explain the topic in a student-friendly way.
-- Use the selected teaching modules to structure the response.
-- Keep the explanation clear, logical, and easy to follow.
+const BUILD_STAGE_LABELS: Array<{ id: BuildStageId; label: string }> = [
+  { id: "ocr", label: "OCR" },
+  { id: "question-detection", label: "Question Detection" },
+  { id: "subject-detection", label: "Subject Detection" },
+  { id: "metadata", label: "Metadata Extraction" },
+  { id: "prompt-generation", label: "Prompt Generation" },
+];
 
-Desired Output Format:
-1. Short answer or direct result
-2. Step-by-step explanation
-3. Simple visual analogy or example
-4. Formula summary if relevant
-5. Common mistakes to avoid
-6. Exam tip`);
-  const [copied, setCopied] = useState(false);
-  const [analysis, setAnalysis] = useState<QuestionAnalysis>({
-    subject: "Not yet identified",
-    chapter: "Not yet identified",
-    questionType: "General",
-    difficulty: "Medium",
-    skillsRequired: ["Reasoning"],
-    visualRequired: "No",
-    formulaRequired: "No",
-    examImportance: "Medium",
+const UNKNOWN_VALUES = new Set(["Unknown", "Not identified", "Not yet identified", "General"]);
+
+const SUBJECT_RULES: Array<{ subject: string; keywords: string[] }> = [
+  { subject: "Mathematics", keywords: ["algebra", "equation", "triangle", "geometry", "quadratic", "ratio"] },
+  { subject: "Physics", keywords: ["force", "motion", "electric", "current", "resistance", "power", "heat"] },
+  { subject: "Chemistry", keywords: ["acid", "base", "salt", "atom", "molecule", "reaction", "periodic"] },
+  { subject: "Biology", keywords: ["cell", "photosynthesis", "respiration", "organ", "tissue", "dna"] },
+  { subject: "History", keywords: ["revolution", "empire", "civilization", "war", "independence"] },
+  { subject: "Geography", keywords: ["climate", "soil", "river", "plateau", "monsoon", "map"] },
+  { subject: "English", keywords: ["grammar", "tense", "comprehension", "essay", "poem", "letter"] },
+];
+
+function normalize(value: string) {
+  return value.toLowerCase();
+}
+
+function inferSubject(text: string) {
+  const lower = normalize(text);
+  for (const rule of SUBJECT_RULES) {
+    if (rule.keywords.some((keyword) => lower.includes(keyword))) {
+      return rule.subject;
+    }
+  }
+  return "Not identified";
+}
+
+function inferBoard(text: string) {
+  const lower = normalize(text);
+  if (lower.includes("cbse")) return "CBSE";
+  if (lower.includes("icse")) return "ICSE";
+  if (lower.includes("igcse")) return "IGCSE";
+  if (lower.includes("state board") || lower.includes("ssc")) return "State Board";
+  return "Not identified";
+}
+
+function inferClassLevel(text: string) {
+  const match = text.match(/\b(?:class|grade|std)\s*([6-9]|10|11|12)\b/i);
+  if (match?.[1]) return `Class ${match[1]}`;
+  return "Not identified";
+}
+
+function inferChapter(text: string) {
+  const match = text.match(/\bchapter\s*[:\-]?\s*([^\n.]+)/i);
+  if (match?.[1]) return match[1].trim();
+  return "Not identified";
+}
+
+function inferTopic(text: string) {
+  const match = text.match(/\btopic\s*[:\-]?\s*([^\n.]+)/i);
+  if (match?.[1]) return match[1].trim();
+
+  const line = text
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .find((item) => item.length > 0 && item.length < 80);
+  return line || "Not identified";
+}
+
+function inferQuestionType(text: string) {
+  const lower = normalize(text);
+  if (/\b(mcq|multiple choice|choose the correct option)\b/.test(lower)) return "MCQ";
+  if (/\b(assertion|reason)\b/.test(lower)) return "Assertion-Reason";
+  if (/\b(prove|derive|show that)\b/.test(lower)) return "Proof / Derivation";
+  if (/\b(solve|calculate|find|evaluate)\b/.test(lower)) return "Numerical / Problem Solving";
+  if (/\b(explain|describe|discuss|why)\b/.test(lower)) return "Conceptual / Long Answer";
+  if (/\b(viva|oral)\b/.test(lower)) return "Viva";
+  return "General";
+}
+
+function extractFormulae(text: string) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const matches = lines.filter((line) =>
+    /([A-Za-z][A-Za-z0-9_]*\s*=\s*[^=].*|[0-9A-Za-z]+\s*[+\-*/^]\s*[0-9A-Za-z]+|\bV\s*=\s*I\s*R\b|\bP\s*=\s*V\s*I\b|\bH\s*=\s*I\s*\^?2\s*R\s*t\b)/i.test(line),
+  );
+  return Array.from(new Set(matches)).slice(0, 12);
+}
+
+function extractNumericalQuestions(text: string) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const matches = lines.filter((line) =>
+    /\d/.test(line) && /\b(find|calculate|solve|evaluate|determine|what is|compute)\b/i.test(line),
+  );
+  return Array.from(new Set(matches)).slice(0, 12);
+}
+
+function extractDiagrams(text: string) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const matches = lines.filter((line) =>
+    /\b(diagram|figure|graph|circuit|flowchart|draw|label|sketch)\b/i.test(line),
+  );
+  return Array.from(new Set(matches)).slice(0, 10);
+}
+
+function extractKeywords(text: string) {
+  const stopWords = new Set([
+    "the", "and", "for", "with", "that", "this", "from", "into", "your", "their", "there",
+    "class", "chapter", "topic", "question", "board", "what", "when", "where", "which", "why",
+    "find", "solve", "state", "write", "show", "explain", "derive", "calculate", "of", "in", "to",
+  ]);
+
+  const tokens = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 2 && !stopWords.has(token));
+
+  const freq = new Map<string, number>();
+  for (const token of tokens) {
+    freq.set(token, (freq.get(token) ?? 0) + 1);
+  }
+
+  return Array.from(freq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([token]) => token);
+}
+
+function inferExtractedContent(text: string): ExtractedContent {
+  return {
+    ocrText: text,
+    subject: inferSubject(text),
+    board: inferBoard(text),
+    classLevel: inferClassLevel(text),
+    chapter: inferChapter(text),
+    topic: inferTopic(text),
+    questionType: inferQuestionType(text),
+    formulae: extractFormulae(text),
+    numericalQuestions: extractNumericalQuestions(text),
+    diagrams: extractDiagrams(text),
+    keywords: extractKeywords(text),
+  };
+}
+
+function getFileTag(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".pdf")) return "PDF";
+  if (lower.match(/\.(png|jpg|jpeg|webp|gif)$/)) return "Image";
+  if (lower.includes("question") || lower.includes("paper")) return "Question paper";
+  if (lower.includes("textbook")) return "Textbook page";
+  return "File";
+}
+
+async function readTextFromFile(file: File): Promise<string> {
+  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+    return extractTextFromPdf(file);
+  }
+
+  if (file.type.startsWith("image/")) {
+    return extractTextFromImage(file);
+  }
+
+  const name = file.name.toLowerCase();
+  const isTextFile =
+    file.type.startsWith("text/") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".md") ||
+    name.endsWith(".csv") ||
+    name.endsWith(".json");
+
+  if (!isTextFile) return "";
+  return file.text();
+}
+
+async function extractTextFromPdf(file: File): Promise<string> {
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const pdfWorker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs?url");
+    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+
+    const buffer = await file.arrayBuffer();
+    const loadingTask = pdfjs.getDocument({ data: buffer });
+    const pdf = await loadingTask.promise;
+    const pageTexts: string[] = [];
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      const text = content.items
+        .map((item) => ("str" in item ? item.str : ""))
+        .join(" ");
+      pageTexts.push(text);
+    }
+
+    return pageTexts.join("\n");
+  } catch {
+    return "";
+  }
+}
+
+async function extractTextFromImage(file: File): Promise<string> {
+  try {
+    const Detector = (window as unknown as { TextDetector?: new () => { detect: (source: ImageBitmap) => Promise<Array<{ rawValue?: string }>> } }).TextDetector;
+    if (Detector) {
+      const bitmap = await createImageBitmap(file);
+      const detector = new Detector();
+      const blocks = await detector.detect(bitmap);
+      const detectedText = blocks
+        .map((block) => block.rawValue?.trim() ?? "")
+        .filter(Boolean)
+        .join("\n");
+
+      if (detectedText) return detectedText;
+    }
+
+    return extractTextWithTesseract(file);
+  } catch {
+    return extractTextWithTesseract(file);
+  }
+}
+
+async function extractTextWithTesseract(file: File): Promise<string> {
+  try {
+    const { createWorker } = await import("tesseract.js");
+    const worker = await createWorker("eng", 1, {
+      workerPath: "/tesseract-worker/worker.min.js",
+      corePath: "/tesseract-core",
+      langPath: "/tessdata",
+      gzip: true,
+      workerBlobURL: false,
+    });
+
+    try {
+      const result = await worker.recognize(file);
+      return result.data.text.trim();
+    } finally {
+      await worker.terminate();
+    }
+  } catch {
+    return "";
+  }
+}
+
+function parseListInput(value: string) {
+  return value
+    .split(/\r?\n|\|/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function formatListInput(values: string[]) {
+  return values.join("\n");
+}
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
   });
+}
 
-  useEffect(() => {
-    setAnalysis(analyzeQuestion(questions));
-  }, [questions]);
+function isMeaningfulExtracted(item: ExtractedContent) {
+  return (
+    !UNKNOWN_VALUES.has(item.subject) ||
+    !UNKNOWN_VALUES.has(item.topic) ||
+    !UNKNOWN_VALUES.has(item.chapter) ||
+    !UNKNOWN_VALUES.has(item.questionType) ||
+    item.formulae.length > 0 ||
+    item.numericalQuestions.length > 0 ||
+    item.diagrams.length > 0
+  );
+}
 
-  const recommendationSummary = useMemo(() => getRecommendations(questions, analysis), [questions, analysis]);
+function RouteComponent() {
+  const { entry } = Route.useSearch();
+  const [files, setFiles] = useState<File[]>([]);
+  const [filesLoaded, setFilesLoaded] = useState(false);
+  const [ocrText, setOcrText] = useLocalStorage(STORAGE_KEYS.teachingEngineOcrText, "");
+  const [extracted, setExtracted] = useLocalStorage<ExtractedContent>(STORAGE_KEYS.teachingEngineExtracted, DEFAULT_EXTRACTED);
+  const [extractedItems, setExtractedItems] = useLocalStorage<ExtractedContent[]>(
+    STORAGE_KEYS.teachingEngineExtractedItems,
+    [],
+  );
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [intakeError, setIntakeError] = useState<string | null>(null);
+  const [studentProfile, setStudentProfile] = useLocalStorage<StudentProfileOption[]>(
+    STORAGE_KEYS.teachingEngineStudentProfile,
+    DEFAULT_STUDENT_PROFILE,
+  );
+  const [depthOptions, setDepthOptions] = useLocalStorage<DepthOption[]>(
+    STORAGE_KEYS.teachingEngineDepthOptions,
+    DEFAULT_DEPTH_OPTIONS,
+  );
+  const [visualStyle, setVisualStyle] = useLocalStorage<VisualStyleOption>(
+    STORAGE_KEYS.teachingEngineVisualStyle,
+    DEFAULT_VISUAL_STYLE,
+  );
+  const [explanationStyle, setExplanationStyle] = useLocalStorage<ExplanationStyleOption>(
+    STORAGE_KEYS.teachingEngineExplanationStyle,
+    DEFAULT_EXPLANATION_STYLE,
+  );
+  const [objective, setObjective] = useLocalStorage(STORAGE_KEYS.teachingEngineObjective, DEFAULT_OBJECTIVE);
+  const [prompt, setPrompt] = useLocalStorage(STORAGE_KEYS.teachingEnginePrompt, "");
+  const [workflowStep, setWorkflowStep] = useLocalStorage<WorkflowStep>(
+    STORAGE_KEYS.teachingEngineWorkflowStep,
+    "upload",
+  );
+  const [copied, setCopied] = useState(false);
+  const [isBuildingPrompt, setIsBuildingPrompt] = useState(false);
+  const [buildStatus, setBuildStatus] = useState<string | null>(null);
+  const [buildStages, setBuildStages] = useState<BuildStage[]>([]);
+  const [buildSuccess, setBuildSuccess] = useState<string | null>(null);
+  const [buildError, setBuildError] = useState<string | null>(null);
+  const [emptyDetectionWarning, setEmptyDetectionWarning] = useState(false);
+  const [sendStatus, setSendStatus] = useState<"idle" | "sending" | "sent" | "opened" | "error">("idle");
+  const [announcement, setAnnouncement] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const uploadAnotherInputRef = useRef<HTMLInputElement>(null);
+  const autoOpenedEntryRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (hasManualOverride) return;
+  const sourceFiles = useMemo(
+    () => files.map((file) => `${getFileTag(file.name)}: ${file.name}`),
+    [files],
+  );
 
-    const nextSelection = recommendationSummary.modules.length > 0
-      ? Array.from(new Set([...DEFAULT_SELECTED_MODULES, ...recommendationSummary.modules])) as ModuleName[]
-      : [...DEFAULT_SELECTED_MODULES];
-
-    setSelectedModules(nextSelection);
-  }, [recommendationSummary.modules, hasManualOverride]);
-
-  const nonEmptyLineCount = questions
+  const ocrLineCount = ocrText
     .split(/\r?\n/)
     .filter((line) => line.trim().length > 0).length;
-  const questionCharacterCount = questions.length;
 
-  function toggleModule(module: ModuleName) {
-    setHasManualOverride(true);
-    setSelectedModules((prev) =>
-      prev.includes(module) ? prev.filter((item) => item !== module) : [...prev, module],
+  const activeExtractedItems = useMemo(() => {
+    if (extractedItems.length > 0) {
+      return extractedItems;
+    }
+    return extracted.ocrText || extracted.subject !== "Not identified" ? [extracted] : [];
+  }, [extracted, extractedItems]);
+
+  const promptSummary = useMemo(() => {
+    const items = activeExtractedItems.filter(isMeaningfulExtracted);
+    if (items.length === 0) return null;
+
+    const uniqueSubjects = Array.from(new Set(items.map((item) => item.subject).filter((value) => !UNKNOWN_VALUES.has(value))));
+    const readingMinutes = Math.max(3, Math.min(12, Math.round(items.length * 1.4 + depthOptions.length * 0.2)));
+    const readingRange = `${Math.max(2, readingMinutes - 1)}-${readingMinutes + 1} minutes`;
+
+    return {
+      imagesProcessed: files.length,
+      academicQuestions: items.length,
+      subjects: uniqueSubjects,
+      teachingStyle: explanationStyle,
+      visualStyle,
+      learnerProfile: studentProfile.length > 0 ? studentProfile.join(", ") : "Average",
+      estimatedOutput: depthOptions,
+      estimatedReadingTime: readingRange,
+    };
+  }, [activeExtractedItems, depthOptions, explanationStyle, files.length, studentProfile, visualStyle]);
+
+  const hasAcademicContent = useMemo(
+    () => activeExtractedItems.some(isMeaningfulExtracted),
+    [activeExtractedItems],
+  );
+
+  useEffect(() => {
+    if (!entry || autoOpenedEntryRef.current === entry) return;
+
+    const targetRef = entry === "camera" ? cameraInputRef : fileInputRef;
+    const input = targetRef.current;
+    if (!input) return;
+
+    autoOpenedEntryRef.current = entry;
+    input.click();
+  }, [entry]);
+
+  useEffect(() => {
+    let active = true;
+
+    void loadTeachingEngineFiles().then((restoredFiles) => {
+      if (!active) return;
+      setFiles(restoredFiles);
+      setFilesLoaded(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!filesLoaded) return;
+    void saveTeachingEngineFiles(files);
+  }, [files, filesLoaded]);
+
+  function toggleProfile(option: StudentProfileOption) {
+    setWorkflowStep("profile");
+    setStudentProfile((prev) =>
+      prev.includes(option) ? prev.filter((item) => item !== option) : [...prev, option],
     );
   }
 
-  function buildPrompt() {
-    const nextPrompt = buildPromptText({
-      selectedModules,
-      questions,
-      fileName,
-    });
+  function toggleDepth(option: DepthOption) {
+    setWorkflowStep("depth");
+    setDepthOptions((prev) =>
+      prev.includes(option) ? prev.filter((item) => item !== option) : [...prev, option],
+    );
+  }
 
-    setPrompt(nextPrompt);
+  async function processFiles(selected: File[], append: boolean) {
+    const combined = append ? [...files, ...selected] : selected;
+    setFiles(combined);
+    setIsExtracting(true);
+    setIntakeError(null);
+
+    try {
+      const extractedTextParts = await Promise.all(combined.map((file) => readTextFromFile(file)));
+      const mergedText = extractedTextParts.join("\n\n").trim();
+      if (mergedText) {
+        setOcrText(mergedText);
+        const nextItems = extractAcademicQuestions(mergedText);
+        if (nextItems.length > 0) {
+          setExtractedItems(nextItems);
+          setExtracted(nextItems[0]);
+          setWorkflowStep("ocr");
+        }
+      } else {
+        setIntakeError("No machine-readable text was found. You can paste OCR text manually for verification.");
+      }
+    } finally {
+      setIsExtracting(false);
+    }
+  }
+
+  function clearAll() {
+    setFiles([]);
+    void clearTeachingEngineFiles();
+    setOcrText("");
+    setExtracted(DEFAULT_EXTRACTED);
+    setExtractedItems([]);
+    setPrompt("");
     setCopied(false);
+    setIntakeError(null);
+    setBuildStatus(null);
+    setBuildStages([]);
+    setBuildSuccess(null);
+    setBuildError(null);
+    setEmptyDetectionWarning(false);
+    setSendStatus("idle");
+    setAnnouncement("");
+    setWorkflowStep("upload");
+    setStudentProfile(DEFAULT_STUDENT_PROFILE);
+    setDepthOptions(DEFAULT_DEPTH_OPTIONS);
+    setVisualStyle(DEFAULT_VISUAL_STYLE);
+    setExplanationStyle(DEFAULT_EXPLANATION_STYLE);
+    setObjective(DEFAULT_OBJECTIVE);
+  }
+
+  async function onFileChange(event: React.ChangeEvent<HTMLInputElement>, append = false) {
+    const selected = Array.from(event.target.files ?? []);
+    if (selected.length === 0) return;
+    await processFiles(selected, append);
+    event.target.value = "";
+  }
+
+  function runExtraction() {
+    setWorkflowStep("ocr");
+    const nextItems = extractAcademicQuestions(ocrText);
+    if (nextItems.length > 0) {
+      setExtractedItems(nextItems);
+      setExtracted(nextItems[0]);
+    } else {
+      setExtractedItems([]);
+      setExtracted(DEFAULT_EXTRACTED);
+    }
+    setCopied(false);
+    setBuildSuccess(null);
+    setBuildError(null);
+    setEmptyDetectionWarning(false);
+    setAnnouncement("Metadata extraction completed.");
+    setWorkflowStep("ocr");
+  }
+
+  async function buildPrompt() {
+    setIsBuildingPrompt(true);
+    setBuildStatus("Analyzing classroom content...");
+    setBuildSuccess(null);
+    setBuildError(null);
+    setEmptyDetectionWarning(false);
+    setSendStatus("idle");
+    setAnnouncement("Building teaching prompt started.");
+    setWorkflowStep("generate");
+
+    const initialStages = BUILD_STAGE_LABELS.map((stage, index) => ({
+      ...stage,
+      status: index === 0 ? "in-progress" : "pending",
+    })) as BuildStage[];
+    setBuildStages(initialStages);
+
+    if (!hasAcademicContent) {
+      setPrompt("");
+      setIsBuildingPrompt(false);
+      setBuildStatus(null);
+      setBuildStages([]);
+      setEmptyDetectionWarning(true);
+      setAnnouncement("No academic questions found.");
+      return;
+    }
+
+    try {
+      for (let stageIndex = 0; stageIndex < BUILD_STAGE_LABELS.length; stageIndex += 1) {
+        const stage = BUILD_STAGE_LABELS[stageIndex];
+
+        setBuildStages((prev) =>
+          prev.map((item, itemIndex) => {
+            if (itemIndex < stageIndex) return { ...item, status: "completed" };
+            if (itemIndex === stageIndex) return { ...item, status: "in-progress" };
+            return { ...item, status: "pending" };
+          }),
+        );
+
+        setBuildStatus(stage.id === "prompt-generation" ? "Building teaching prompt..." : `Running ${stage.label.toLowerCase()}...`);
+        setAnnouncement(`${stage.label} in progress.`);
+        await delay(360);
+      }
+
+      const nextExtractedItems = extractedItems.length > 0
+        ? [{
+            ...extractedItems[0],
+            ...extracted,
+            ocrText,
+          }, ...extractedItems.slice(1)]
+        : [{
+            ...extracted,
+            ocrText,
+          }];
+
+      const nextPrompts = buildPromptTexts({
+        sourceFiles,
+        extracted: {
+          ...extracted,
+          ocrText,
+        },
+        extractedItems: nextExtractedItems,
+        studentProfile,
+        depthOptions,
+        visualStyle,
+        explanationStyle,
+        objective,
+      });
+
+      const nextPrompt = nextPrompts.length <= 1
+        ? (nextPrompts[0] ?? "")
+        : nextPrompts.map((item, index) => `QUESTION ${index + 1} PROMPT\n${item}`).join("\n\n");
+
+      setPrompt(nextPrompt);
+      setBuildStages(BUILD_STAGE_LABELS.map((stage) => ({ ...stage, status: "completed" })));
+      setBuildStatus(null);
+      setBuildSuccess(`Prompt Built Successfully. Detected ${nextExtractedItems.length} academic questions. Ready to send to ChatGPT.`);
+      setAnnouncement("Prompt built successfully.");
+      setWorkflowStep("preview");
+      setCopied(false);
+    } catch {
+      setBuildStatus(null);
+      setBuildError("Unable to build prompt. Reason: OCR extraction failed.");
+      setBuildStages([]);
+      setAnnouncement("Unable to build prompt.");
+    } finally {
+      setIsBuildingPrompt(false);
+    }
+  }
+
+  async function sendToChatGpt() {
+    if (!prompt.trim()) return;
+    setSendStatus("sending");
+    setAnnouncement("Sending prompt to ChatGPT.");
+    setWorkflowStep("preview");
+    await delay(520);
+
+    try {
+      const url = `https://chatgpt.com/?prompt=${encodeURIComponent(prompt)}`;
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (opened) {
+        setSendStatus("opened");
+        setAnnouncement("Opened ChatGPT with generated prompt.");
+      } else {
+        setSendStatus("sent");
+        setAnnouncement("Prompt sent successfully.");
+      }
+    } catch {
+      setSendStatus("error");
+      setAnnouncement("Unable to open ChatGPT tab.");
+    }
+  }
+
+  function chooseImagesAgain() {
+    fileInputRef.current?.click();
+  }
+
+  function reportIssue() {
+    window.open("mailto:support@teachersdepth.app?subject=Prompt%20Builder%20Issue", "_blank", "noopener,noreferrer");
   }
 
   async function copyPrompt() {
     try {
       await navigator.clipboard.writeText(prompt);
       setCopied(true);
+      setAnnouncement("Prompt copied to clipboard.");
     } catch {
       setCopied(false);
     }
   }
 
   return (
-    <AppShell back={{ to: "/" }} title="Teacher's Teaching Engine">
+    <AppShell back={{ to: "/" }} title="Prompt Builder Engine">
       <div className="space-y-4">
         <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
           <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             <Upload size={14} />
-            <span>1. Upload PDF or Screenshot</span>
+            <span>1. Upload Source Content</span>
           </div>
 
-          <label className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-background/50 px-4 py-8 text-center transition hover:border-primary/60">
-            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
-              <Upload size={20} />
+          <div className="rounded-2xl border border-dashed border-border bg-background/50 px-4 py-5">
+            <div className="mb-3 text-sm font-semibold text-foreground">Attach PDF, screenshot, image, question paper or textbook page</div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+              >
+                <Upload size={16} />
+                Upload Screenshot/PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
+              >
+                <Camera size={16} />
+                Camera Photo
+              </button>
+              <button
+                type="button"
+                onClick={() => uploadAnotherInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
+              >
+                <Upload size={16} />
+                Upload Another
+              </button>
+              <button
+                type="button"
+                onClick={clearAll}
+                className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
+              >
+                Clear
+              </button>
             </div>
-            <div className="text-sm font-semibold text-foreground">Attach a PDF or screenshot</div>
-            <div className="mt-1 text-xs text-muted-foreground">No OCR or analysis is performed here — this is a guided teaching UI.</div>
             <input
+              ref={fileInputRef}
               type="file"
               accept="application/pdf,image/*"
+              multiple
               className="hidden"
               onChange={(event) => {
-                const file = event.target.files?.[0];
-                setFileName(file ? file.name : null);
+                void onFileChange(event, false);
               }}
             />
-          </label>
+            <input
+              ref={uploadAnotherInputRef}
+              type="file"
+              accept="application/pdf,image/*"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                void onFileChange(event, true);
+              }}
+            />
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(event) => {
+                void onFileChange(event, true);
+              }}
+            />
+            <div className="mt-2 text-xs text-muted-foreground">No external AI calls. OCR and extraction run locally where possible.</div>
+          </div>
 
-          {fileName ? (
-            <div className="mt-3 rounded-2xl border border-border bg-card/60 px-3 py-2 text-sm text-foreground">
-              <span className="text-muted-foreground">Selected file:</span> {fileName}
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-background/50 p-3">
+              <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Attached files</div>
+              {sourceFiles.length > 0 ? (
+                <ul className="space-y-1 text-sm text-foreground">
+                  {sourceFiles.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">No files attached yet.</p>
+              )}
             </div>
-          ) : null}
+            <div className="rounded-2xl border border-border bg-background/50 p-3">
+              <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Extracted OCR text (verify/edit)</div>
+              <textarea
+                value={ocrText}
+                onChange={(event) => {
+                  setWorkflowStep("ocr");
+                  setOcrText(event.target.value);
+                }}
+                placeholder="Paste OCR text from your uploaded page here."
+                className="min-h-28 w-full rounded-xl border border-border bg-background/70 px-3 py-2 text-sm text-foreground outline-none"
+              />
+              <div className="mt-2 text-[11px] text-muted-foreground">{ocrText.length} chars • {ocrLineCount} lines</div>
+            </div>
+          </div>
+
+          {isExtracting && (
+            <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              Processing files locally (OCR/PDF text extraction)...
+            </div>
+          )}
+
+          {intakeError && (
+            <p className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              {intakeError}
+            </p>
+          )}
         </section>
 
-        <QuestionEditor
-          questions={questions}
-          onQuestionsChange={setQuestions}
-          questionCharacterCount={questionCharacterCount}
-          nonEmptyLineCount={nonEmptyLineCount}
+        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              <FileText size={14} />
+              <span>2. Extract Metadata</span>
+            </div>
+            <button
+              type="button"
+              onClick={runExtraction}
+              className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs text-foreground"
+            >
+              Extract Locally
+            </button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <ExtractField label="Subject" value={extracted.subject} onChange={(value) => setExtracted((prev) => ({ ...prev, subject: value }))} />
+            <ExtractField label="Board" value={extracted.board} onChange={(value) => setExtracted((prev) => ({ ...prev, board: value }))} />
+            <ExtractField label="Class" value={extracted.classLevel} onChange={(value) => setExtracted((prev) => ({ ...prev, classLevel: value }))} />
+            <ExtractField label="Chapter" value={extracted.chapter} onChange={(value) => setExtracted((prev) => ({ ...prev, chapter: value }))} />
+            <ExtractField label="Topic" value={extracted.topic} onChange={(value) => setExtracted((prev) => ({ ...prev, topic: value }))} />
+            <ExtractField label="Question type" value={extracted.questionType} onChange={(value) => setExtracted((prev) => ({ ...prev, questionType: value }))} />
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <ExtractListField
+              label="Formulae"
+              values={extracted.formulae}
+              onChange={(values) => setExtracted((prev) => ({ ...prev, formulae: values }))}
+            />
+            <ExtractListField
+              label="Numerical questions"
+              values={extracted.numericalQuestions}
+              onChange={(values) => setExtracted((prev) => ({ ...prev, numericalQuestions: values }))}
+            />
+            <ExtractListField
+              label="Diagrams"
+              values={extracted.diagrams}
+              onChange={(values) => setExtracted((prev) => ({ ...prev, diagrams: values }))}
+            />
+            <ExtractListField
+              label="Keywords"
+              values={extracted.keywords}
+              onChange={(values) => setExtracted((prev) => ({ ...prev, keywords: values }))}
+            />
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
+          <div className="mb-3 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">3. Student Profile</div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {STUDENT_PROFILE_OPTIONS.map((option) => {
+              const checked = studentProfile.includes(option);
+              return (
+                <label key={option} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${checked ? "border-primary/50 bg-primary/10 text-foreground" : "border-border bg-background/40 text-muted-foreground"}`}>
+                  <input type="checkbox" checked={checked} onChange={() => toggleProfile(option)} />
+                  <span>{option}</span>
+                </label>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
+          <div className="mb-3 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">4. Teaching Depth</div>
+          <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {DEPTH_OPTIONS.map((option) => {
+              const checked = depthOptions.includes(option);
+              return (
+                <label key={option} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${checked ? "border-primary/50 bg-primary/10 text-foreground" : "border-border bg-background/40 text-muted-foreground"}`}>
+                  <input type="checkbox" checked={checked} onChange={() => toggleDepth(option)} />
+                  <span>{option}</span>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <SelectField
+              label="Required visual style"
+              value={visualStyle}
+              options={VISUAL_STYLE_OPTIONS}
+              onChange={(value) => setVisualStyle(value as VisualStyleOption)}
+            />
+            <SelectField
+              label="Required explanation style"
+              value={explanationStyle}
+              options={EXPLANATION_STYLE_OPTIONS}
+              onChange={(value) => setExplanationStyle(value as ExplanationStyleOption)}
+            />
+          </div>
+
+          <div className="mt-3">
+            <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Objective</div>
+            <textarea
+              value={objective}
+              onChange={(event) => {
+                setWorkflowStep("generate");
+                setObjective(event.target.value);
+              }}
+              className="min-h-24 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm text-foreground outline-none"
+            />
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              <Sparkles size={14} />
+              <span>5. Generate Prompt</span>
+            </div>
+            <button
+              type="button"
+              onClick={buildPrompt}
+              disabled={isBuildingPrompt}
+              className="rounded-2xl px-4 py-2 text-sm font-semibold text-primary-foreground"
+              style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
+            >
+              <span className="inline-flex items-center gap-2">
+                {isBuildingPrompt && <Loader2 size={15} className="animate-spin" />}
+                {isBuildingPrompt ? "Building teaching prompt..." : "Build Prompt"}
+              </span>
+            </button>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Teacher's Depth builds a copy-ready ChatGPT prompt from your local educational inputs. No Gemini or ChatGPT call is made here.
+          </p>
+
+          <div aria-live="polite" className="sr-only">
+            {announcement}
+          </div>
+
+          {buildStatus && (
+            <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              {buildStatus}
+            </div>
+          )}
+
+          {buildStages.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-border bg-background/50 p-3">
+              <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Build Progress</div>
+              <div className="space-y-2 text-sm">
+                {buildStages.map((stage) => (
+                  <div key={stage.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/40 px-3 py-2">
+                    <span className="text-foreground">{stage.label}</span>
+                    <span
+                      className={`text-xs font-semibold ${
+                        stage.status === "completed"
+                          ? "text-emerald-300"
+                          : stage.status === "in-progress"
+                            ? "text-amber-200"
+                            : "text-muted-foreground"
+                      }`}
+                    >
+                      {stage.status === "completed" ? "✓ Completed" : stage.status === "in-progress" ? "⏳ In Progress..." : "○ Pending"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {buildSuccess && (
+            <div className="mt-4 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-100 animate-in fade-in duration-300">
+              ✓ {buildSuccess}
+            </div>
+          )}
+
+          {emptyDetectionWarning && (
+            <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-sm text-amber-100">
+              <p className="font-semibold">⚠ No academic questions found.</p>
+              <p className="mt-1">Suggestions:</p>
+              <p>• Capture a clearer image</p>
+              <p>• Crop unnecessary UI</p>
+              <p>• Ensure the textbook/question is visible</p>
+            </div>
+          )}
+
+          {buildError && (
+            <div className="mt-4 rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-3 text-sm text-red-100">
+              <p className="font-semibold">Unable to build prompt.</p>
+              <p className="mt-1">Reason: OCR extraction failed.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={buildPrompt} className="rounded-xl border border-border bg-card/70 px-3 py-2 text-xs text-foreground">
+                  Retry
+                </button>
+                <button type="button" onClick={chooseImagesAgain} className="rounded-xl border border-border bg-card/70 px-3 py-2 text-xs text-foreground">
+                  Choose Images Again
+                </button>
+                <button type="button" onClick={reportIssue} className="rounded-xl border border-border bg-card/70 px-3 py-2 text-xs text-foreground">
+                  Report Issue
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <PromptPreview
+          prompt={prompt}
+          copied={copied}
+          onCopyPrompt={copyPrompt}
+          onSendToChatGpt={sendToChatGpt}
+          sendStatus={sendStatus}
+          summary={promptSummary}
         />
-
-        <QuestionAnalysisCard analysis={analysis} />
-
-        <ModuleRecommendations recommendationSummary={recommendationSummary} />
-
-        <ModuleSelector
-          modules={MODULES}
-          selectedModules={selectedModules}
-          onToggleModule={toggleModule}
-        />
-
-        <PromptPreview prompt={prompt} copied={copied} onCopyPrompt={copyPrompt} />
-
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <button
-            type="button"
-            onClick={buildPrompt}
-            className="flex-1 rounded-2xl py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
-            style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
-          >
-            Build Prompt
-          </button>
-          <button
-            type="button"
-            onClick={copyPrompt}
-            className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-secondary-foreground"
-          >
-            <Clipboard size={16} />
-            {copied ? "Copied" : "Copy Prompt"}
-          </button>
-        </div>
       </div>
     </AppShell>
+  );
+}
+
+function ExtractField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="rounded-2xl border border-border bg-background/50 p-3">
+      <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full bg-transparent text-sm text-foreground outline-none"
+      />
+    </label>
+  );
+}
+
+function ExtractListField({
+  label,
+  values,
+  onChange,
+}: {
+  label: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+}) {
+  return (
+    <label className="rounded-2xl border border-border bg-background/50 p-3">
+      <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <textarea
+        value={formatListInput(values)}
+        onChange={(event) => onChange(parseListInput(event.target.value))}
+        placeholder="One item per line"
+        className="min-h-24 w-full resize-y bg-transparent text-sm text-foreground outline-none"
+      />
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="rounded-2xl border border-border bg-background/50 p-3">
+      <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full bg-transparent text-sm text-foreground outline-none"
+      >
+        {options.map((option) => (
+          <option key={option} value={option} className="bg-background text-foreground">
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

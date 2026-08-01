@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Flame, GraduationCap, History, Sparkles, Trophy } from "lucide-react";
+import { Camera, FileImage, FileText, Flame, GraduationCap, History, Sparkles, Trophy } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Stars } from "@/components/Stars";
 import { CHAPTERS, SUBJECTS } from "@/lib/data";
@@ -56,6 +56,33 @@ function Index() {
         <p className="mt-2 max-w-lg text-sm text-muted-foreground">
           Built for CBSE, ICSE and IGCSE — every chapter explained the way a great teacher would.
         </p>
+      </section>
+
+      <section className="mb-8">
+        <SectionTitle title="Start Here" subtitle="Begin with your material" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <StartTile
+            href="/teaching-engine?entry=screenshot"
+            icon={FileImage}
+            label="Upload Screenshot"
+            subtitle="Use a screenshot from your phone gallery"
+            tone="from-cyan-500/30 to-sky-500/10"
+          />
+          <StartTile
+            href="/teaching-engine?entry=pdf"
+            icon={FileText}
+            label="Upload PDF"
+            subtitle="Open a worksheet, textbook page or question paper"
+            tone="from-amber-500/30 to-orange-500/10"
+          />
+          <StartTile
+            href="/teaching-engine?entry=camera"
+            icon={Camera}
+            label="Camera"
+            subtitle="Capture a fresh photo before OCR and prompt building"
+            tone="from-emerald-500/30 to-teal-500/10"
+          />
+        </div>
       </section>
 
       {/* Quick start */}
@@ -174,6 +201,34 @@ function Index() {
         </div>
       </section>
     </AppShell>
+  );
+}
+
+function StartTile({
+  href,
+  icon: Icon,
+  label,
+  subtitle,
+  tone,
+}: {
+  href: string;
+  icon: any;
+  label: string;
+  subtitle: string;
+  tone: string;
+}) {
+  return (
+    <a
+      href={href}
+      className="group relative overflow-hidden rounded-3xl border border-border bg-card/70 p-4 backdrop-blur transition hover:border-primary/60"
+    >
+      <div aria-hidden className={`absolute inset-0 -z-10 bg-gradient-to-br ${tone} opacity-80`} />
+      <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-background/60 text-foreground shadow-sm">
+        <Icon size={20} />
+      </div>
+      <div className="mt-3 text-base font-bold text-foreground">{label}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+    </a>
   );
 }
 
