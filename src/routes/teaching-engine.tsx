@@ -1,5 +1,5 @@
 ﻿import { createFileRoute } from "@tanstack/react-router";
-import { Camera, FileText, Loader2, Sparkles, Upload } from "lucide-react";
+import { Camera, Check, FileText, GraduationCap, Loader2, Presentation, Sparkles, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { PromptPreview } from "@/components/teaching-engine/PromptPreview";
@@ -87,6 +87,76 @@ const BUILD_STAGE_LABELS: Array<{ id: BuildStageId; label: string }> = [
 ];
 
 const UNKNOWN_VALUES = new Set(["Unknown", "Not identified", "Not yet identified", "General"]);
+
+const PROFILE_LABELS: Record<StudentProfileOption, string> = {
+  "Very weak": "Needs basics first",
+  Average: "Average level",
+  Advanced: "Advanced learner",
+  "Visual learner": "Visual learner",
+  "Student finds subject boring": "Needs engaging teaching",
+  "Exam preparation": "Exam preparation",
+  "Quick revision": "Quick revision",
+  "Deep understanding": "Deep understanding",
+  "Formula background": "Formula support",
+  "Step-by-step explanation": "Step-by-step teaching",
+  "Teacher mode": "Teacher-led delivery",
+  "Parent mode": "Parent-friendly support",
+};
+
+const PROFILE_GROUPS: Array<{ heading: string; icon: typeof GraduationCap; options: StudentProfileOption[] }> = [
+  {
+    heading: "Learner Profile",
+    icon: GraduationCap,
+    options: [
+      "Very weak",
+      "Average",
+      "Advanced",
+      "Visual learner",
+      "Step-by-step explanation",
+      "Quick revision",
+      "Deep understanding",
+      "Exam preparation",
+      "Student finds subject boring",
+      "Formula background",
+    ],
+  },
+  {
+    heading: "Teacher Requirements",
+    icon: Presentation,
+    options: ["Teacher mode", "Parent mode"],
+  },
+];
+
+const DEPTH_LABELS: Record<DepthOption, string> = {
+  Definition: "Definition",
+  Background: "Background context",
+  "Real-life analogy": "Real-life analogy",
+  "Formula derivation": "Formula derivation",
+  "Visual explanation": "Visual explanation",
+  "Dissected visual": "Dissected visual",
+  "Worked examples": "Worked examples",
+  "Common mistakes": "Common mistakes",
+  "Revision notes": "Revision notes",
+  "Memory tricks": "Memory tricks",
+  "Viva questions": "Viva questions",
+  "Board questions": "Board exam questions",
+  "Practice questions": "Practice questions",
+};
+
+const DEPTH_GROUPS: Array<{ heading: string; options: DepthOption[] }> = [
+  {
+    heading: "Core Understanding",
+    options: ["Definition", "Background", "Formula derivation", "Worked examples"],
+  },
+  {
+    heading: "Visual and Explanation Support",
+    options: ["Visual explanation", "Dissected visual", "Real-life analogy"],
+  },
+  {
+    heading: "Revision and Assessment",
+    options: ["Revision notes", "Memory tricks", "Practice questions", "Board questions", "Viva questions", "Common mistakes"],
+  },
+];
 
 const SUBJECT_RULES: Array<{ subject: string; keywords: string[] }> = [
   { subject: "Mathematics", keywords: ["algebra", "equation", "triangle", "geometry", "quadratic", "ratio"] },
@@ -347,6 +417,10 @@ function isMeaningfulExtracted(item: ExtractedContent) {
   );
 }
 
+function getActionableExtractedItems(items: ExtractedContent[]) {
+  return items.filter(isMeaningfulExtracted);
+}
+
 function RouteComponent() {
   const { entry } = Route.useSearch();
   const [files, setFiles] = useState<File[]>([]);
@@ -411,8 +485,13 @@ function RouteComponent() {
     return extracted.ocrText || extracted.subject !== "Not identified" ? [extracted] : [];
   }, [extracted, extractedItems]);
 
+  const actionableExtractedItems = useMemo(
+    () => getActionableExtractedItems(activeExtractedItems),
+    [activeExtractedItems],
+  );
+
   const promptSummary = useMemo(() => {
-    const items = activeExtractedItems.filter(isMeaningfulExtracted);
+    const items = actionableExtractedItems;
     if (items.length === 0) return null;
 
     const uniqueSubjects = Array.from(new Set(items.map((item) => item.subject).filter((value) => !UNKNOWN_VALUES.has(value))));
@@ -429,11 +508,11 @@ function RouteComponent() {
       estimatedOutput: depthOptions,
       estimatedReadingTime: readingRange,
     };
-  }, [activeExtractedItems, depthOptions, explanationStyle, files.length, studentProfile, visualStyle]);
+  }, [actionableExtractedItems, depthOptions, explanationStyle, files.length, studentProfile, visualStyle]);
 
   const hasAcademicContent = useMemo(
-    () => activeExtractedItems.some(isMeaningfulExtracted),
-    [activeExtractedItems],
+    () => actionableExtractedItems.length > 0,
+    [actionableExtractedItems],
   );
 
   useEffect(() => {
@@ -492,10 +571,14 @@ function RouteComponent() {
       if (mergedText) {
         setOcrText(mergedText);
         const nextItems = extractAcademicQuestions(mergedText);
-        if (nextItems.length > 0) {
+        const actionableItems = getActionableExtractedItems(nextItems);
+        if (actionableItems.length > 0) {
           setExtractedItems(nextItems);
-          setExtracted(nextItems[0]);
+          setExtracted(actionableItems[0]);
           setWorkflowStep("ocr");
+        } else {
+          setExtractedItems(nextItems);
+          setExtracted(DEFAULT_EXTRACTED);
         }
       } else {
         setIntakeError("No machine-readable text was found. You can paste OCR text manually for verification.");
@@ -539,11 +622,12 @@ function RouteComponent() {
   function runExtraction() {
     setWorkflowStep("ocr");
     const nextItems = extractAcademicQuestions(ocrText);
-    if (nextItems.length > 0) {
+    const actionableItems = getActionableExtractedItems(nextItems);
+    if (actionableItems.length > 0) {
       setExtractedItems(nextItems);
-      setExtracted(nextItems[0]);
+      setExtracted(actionableItems[0]);
     } else {
-      setExtractedItems([]);
+      setExtractedItems(nextItems);
       setExtracted(DEFAULT_EXTRACTED);
     }
     setCopied(false);
@@ -597,12 +681,12 @@ function RouteComponent() {
         await delay(360);
       }
 
-      const nextExtractedItems = extractedItems.length > 0
+      const nextExtractedItems = actionableExtractedItems.length > 0
         ? [{
-            ...extractedItems[0],
+            ...actionableExtractedItems[0],
             ...extracted,
             ocrText,
-          }, ...extractedItems.slice(1)]
+          }, ...actionableExtractedItems.slice(1)]
         : [{
             ...extracted,
             ocrText,
@@ -849,33 +933,55 @@ function RouteComponent() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
-          <div className="mb-3 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">3. Student Profile</div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {STUDENT_PROFILE_OPTIONS.map((option) => {
-              const checked = studentProfile.includes(option);
+        <section className="rounded-3xl border border-border bg-card/70 p-5 shadow-[var(--shadow-elegant)] backdrop-blur md:p-6">
+          <div className="mb-5 text-xl font-semibold tracking-[0.02em] text-foreground md:text-2xl">3. Student Profile</div>
+          <div className="space-y-7">
+            {PROFILE_GROUPS.map((group) => {
+              const Icon = group.icon;
               return (
-                <label key={option} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${checked ? "border-primary/50 bg-primary/10 text-foreground" : "border-border bg-background/40 text-muted-foreground"}`}>
-                  <input type="checkbox" checked={checked} onChange={() => toggleProfile(option)} />
-                  <span>{option}</span>
-                </label>
+                <div key={group.heading} className="space-y-4">
+                  <div className="flex items-center gap-3 text-lg font-semibold text-foreground md:text-xl">
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background/60 text-primary">
+                      <Icon size={18} />
+                    </span>
+                    <span>{group.heading}</span>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {group.options.map((option) => (
+                      <SelectionCard
+                        key={option}
+                        checked={studentProfile.includes(option)}
+                        label={PROFILE_LABELS[option]}
+                        value={option}
+                        onToggle={() => toggleProfile(option)}
+                      />
+                    ))}
+                  </div>
+                </div>
               );
             })}
           </div>
         </section>
 
-        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
-          <div className="mb-3 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">4. Teaching Depth</div>
-          <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {DEPTH_OPTIONS.map((option) => {
-              const checked = depthOptions.includes(option);
-              return (
-                <label key={option} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${checked ? "border-primary/50 bg-primary/10 text-foreground" : "border-border bg-background/40 text-muted-foreground"}`}>
-                  <input type="checkbox" checked={checked} onChange={() => toggleDepth(option)} />
-                  <span>{option}</span>
-                </label>
-              );
-            })}
+        <section className="rounded-3xl border border-border bg-card/70 p-5 shadow-[var(--shadow-elegant)] backdrop-blur md:p-6">
+          <div className="mb-5 text-xl font-semibold tracking-[0.02em] text-foreground md:text-2xl">4. Teaching Depth</div>
+          <div className="mb-5 space-y-7">
+            {DEPTH_GROUPS.map((group) => (
+              <div key={group.heading} className="space-y-4">
+                <div className="text-lg font-semibold text-foreground md:text-xl">{group.heading}</div>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {group.options.map((option) => (
+                    <SelectionCard
+                      key={option}
+                      checked={depthOptions.includes(option)}
+                      label={DEPTH_LABELS[option]}
+                      value={option}
+                      onToggle={() => toggleDepth(option)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -1081,5 +1187,51 @@ function SelectField({
         ))}
       </select>
     </label>
+  );
+}
+
+function SelectionCard({
+  checked,
+  label,
+  value,
+  onToggle,
+}: {
+  checked: boolean;
+  label: string;
+  value: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={value}
+      onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onToggle();
+        }
+      }}
+      className={`flex min-h-14 w-full items-start gap-4 rounded-2xl border px-4 py-4 text-left transition duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] ${
+        checked
+          ? "border-primary/55 bg-primary/12 text-foreground shadow-[var(--shadow-elegant)]"
+          : "border-border bg-background/45 text-foreground/90"
+      }`}
+    >
+      <span
+        className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition ${
+          checked
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-border bg-background/80 text-transparent"
+        }`}
+      >
+        <Check size={17} strokeWidth={3} />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col justify-center">
+        <span className="text-[15px] font-semibold leading-6 text-foreground md:text-[16px] lg:text-[17px]">{label}</span>
+      </span>
+    </button>
   );
 }
