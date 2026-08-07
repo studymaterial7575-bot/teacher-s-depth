@@ -14,11 +14,13 @@ import { STORAGE_KEYS, useLocalStorage } from "@/lib/storage";
 import {
   DEPTH_OPTIONS,
   EXPLANATION_STYLE_OPTIONS,
+  OUTPUT_OPTIONS,
   STUDENT_PROFILE_OPTIONS,
   VISUAL_STYLE_OPTIONS,
   type DepthOption,
   type ExplanationStyleOption,
   type ExtractedContent,
+  type OutputOption,
   type StudentProfileOption,
   type VisualStyleOption,
 } from "@/types/teaching-engine";
@@ -66,6 +68,11 @@ const DEFAULT_EXTRACTED: ExtractedContent = {
   chapter: "Not identified",
   topic: "Not identified",
   questionType: "Not identified",
+  questionTypes: [],
+  language: "Not identified",
+  hasTables: false,
+  hasExercises: false,
+  examImportance: "Not identified",
   formulae: [],
   numericalQuestions: [],
   diagrams: [],
@@ -74,6 +81,7 @@ const DEFAULT_EXTRACTED: ExtractedContent = {
 
 const DEFAULT_STUDENT_PROFILE: StudentProfileOption[] = ["Average", "Step-by-step explanation"];
 const DEFAULT_DEPTH_OPTIONS: DepthOption[] = ["Definition", "Worked examples", "Common mistakes", "Revision notes"];
+const DEFAULT_OUTPUT_OPTIONS: OutputOption[] = ["Normal Solution"];
 const DEFAULT_VISUAL_STYLE: VisualStyleOption = "Simple labeled diagram";
 const DEFAULT_EXPLANATION_STYLE: ExplanationStyleOption = "Simple classroom language";
 const DEFAULT_OBJECTIVE = "Build a student-friendly explanation that can be directly used in class and for exam preparation.";
@@ -87,6 +95,35 @@ const BUILD_STAGE_LABELS: Array<{ id: BuildStageId; label: string }> = [
 ];
 
 const UNKNOWN_VALUES = new Set(["Unknown", "Not identified", "Not yet identified", "General"]);
+
+const OUTPUT_OPTION_LABELS: Record<OutputOption, string> = {
+  "Normal Solution": "Normal Solution",
+  Background: "Background",
+  "Formula Breakdown": "Formula Breakdown",
+  "Logical Flow": "Logical Flow",
+  "Visual Explanation": "Visual Explanation",
+  "Real-life Analogy": "Real-life Analogy",
+  "Exam Importance": "Exam Importance",
+  "Common Mistakes": "Common Mistakes",
+  "Predicted Doubts": "Predicted Doubts",
+  "Classroom Teaching Script": "Classroom Teaching Script",
+  "Blackboard Writing": "Blackboard Writing",
+  Homework: "Homework",
+  "Practice Questions": "Practice Questions",
+  "Revision Notes": "Revision Notes",
+  "Word Meanings": "Word Meanings",
+  "Grammar Explanation": "Grammar Explanation",
+  Timeline: "Timeline",
+  "Map Explanation": "Map Explanation",
+  Flowchart: "Flowchart",
+  "Mind Map": "Mind Map",
+  Infographic: "Infographic",
+  "Create Teaching Image": "Create Teaching Image",
+};
+
+const STEM_SUBJECTS = new Set(["Mathematics", "Physics", "Chemistry", "Biology", "Computer", "Commerce"]);
+const LANGUAGE_SUBJECTS = new Set(["English", "Hindi", "Marathi"]);
+const SOCIAL_SUBJECTS = new Set(["History", "Geography", "Social Science", "Civics", "Economics"]);
 
 const PROFILE_LABELS: Record<StudentProfileOption, string> = {
   "Very weak": "Needs basics first",
@@ -172,6 +209,90 @@ function normalize(value: string) {
   return value.toLowerCase();
 }
 
+function getRelevantOutputOptions(subject: string) {
+  const normalized = subject.trim();
+  if (!normalized || UNKNOWN_VALUES.has(normalized)) {
+    return OUTPUT_OPTIONS;
+  }
+
+  if (STEM_SUBJECTS.has(normalized)) {
+    return OUTPUT_OPTIONS.filter((option) =>
+      [
+        "Normal Solution",
+        "Background",
+        "Formula Breakdown",
+        "Logical Flow",
+        "Visual Explanation",
+        "Real-life Analogy",
+        "Exam Importance",
+        "Common Mistakes",
+        "Predicted Doubts",
+        "Classroom Teaching Script",
+        "Blackboard Writing",
+        "Homework",
+        "Practice Questions",
+        "Revision Notes",
+        "Flowchart",
+        "Mind Map",
+        "Infographic",
+        "Create Teaching Image",
+      ].includes(option),
+    );
+  }
+
+  if (LANGUAGE_SUBJECTS.has(normalized)) {
+    return OUTPUT_OPTIONS.filter((option) =>
+      [
+        "Normal Solution",
+        "Background",
+        "Logical Flow",
+        "Real-life Analogy",
+        "Exam Importance",
+        "Common Mistakes",
+        "Predicted Doubts",
+        "Classroom Teaching Script",
+        "Blackboard Writing",
+        "Homework",
+        "Practice Questions",
+        "Revision Notes",
+        "Word Meanings",
+        "Grammar Explanation",
+        "Mind Map",
+        "Infographic",
+        "Create Teaching Image",
+      ].includes(option),
+    );
+  }
+
+  if (SOCIAL_SUBJECTS.has(normalized)) {
+    return OUTPUT_OPTIONS.filter((option) =>
+      [
+        "Normal Solution",
+        "Background",
+        "Logical Flow",
+        "Visual Explanation",
+        "Real-life Analogy",
+        "Exam Importance",
+        "Common Mistakes",
+        "Predicted Doubts",
+        "Classroom Teaching Script",
+        "Blackboard Writing",
+        "Homework",
+        "Practice Questions",
+        "Revision Notes",
+        "Timeline",
+        "Map Explanation",
+        "Flowchart",
+        "Mind Map",
+        "Infographic",
+        "Create Teaching Image",
+      ].includes(option),
+    );
+  }
+
+  return OUTPUT_OPTIONS;
+}
+
 function inferSubject(text: string) {
   const lower = normalize(text);
   for (const rule of SUBJECT_RULES) {
@@ -223,6 +344,38 @@ function inferQuestionType(text: string) {
   if (/\b(explain|describe|discuss|why)\b/.test(lower)) return "Conceptual / Long Answer";
   if (/\b(viva|oral)\b/.test(lower)) return "Viva";
   return "General";
+}
+
+function inferQuestionTypes(text: string) {
+  const lower = normalize(text);
+  const questionTypes: string[] = [];
+  if (/\b(mcq|multiple choice|choose the correct option)\b/.test(lower)) questionTypes.push("MCQ");
+  if (/\b(solve|calculate|find|evaluate)\b/.test(lower)) questionTypes.push("Numerical / Problem Solving");
+  if (/\b(explain|describe|discuss|why)\b/.test(lower)) questionTypes.push("Conceptual / Long Answer");
+  if (/\b(diagram|figure|graph|circuit|flowchart|draw|label|sketch)\b/.test(lower)) questionTypes.push("Diagram Required");
+  return questionTypes.length > 0 ? questionTypes : ["General"];
+}
+
+function inferLanguage(text: string) {
+  if (/[\u0900-\u097F]/.test(text)) return "Hindi/Marathi";
+  return "English";
+}
+
+function inferHasTables(text: string) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const pipeLines = lines.filter((line) => line.includes("|")).length;
+  return pipeLines > 0;
+}
+
+function inferHasExercises(text: string) {
+  return /\b(exercise|worksheet|practice set|assignment|homework)\b/i.test(text);
+}
+
+function inferExamImportance(text: string) {
+  const lower = normalize(text);
+  if (/\b(board exam|important|5 marks|3 marks|frequently asked)\b/.test(lower)) return "High";
+  if (/\b(exam|test|revision)\b/.test(lower)) return "Medium";
+  return "Not identified";
 }
 
 function extractFormulae(text: string) {
@@ -282,6 +435,11 @@ function inferExtractedContent(text: string): ExtractedContent {
     chapter: inferChapter(text),
     topic: inferTopic(text),
     questionType: inferQuestionType(text),
+    questionTypes: inferQuestionTypes(text),
+    language: inferLanguage(text),
+    hasTables: inferHasTables(text),
+    hasExercises: inferHasExercises(text),
+    examImportance: inferExamImportance(text),
     formulae: extractFormulae(text),
     numericalQuestions: extractNumericalQuestions(text),
     diagrams: extractDiagrams(text),
@@ -441,6 +599,10 @@ function RouteComponent() {
     STORAGE_KEYS.teachingEngineDepthOptions,
     DEFAULT_DEPTH_OPTIONS,
   );
+  const [selectedOutputOptions, setSelectedOutputOptions] = useLocalStorage<OutputOption[]>(
+    STORAGE_KEYS.teachingEngineOutputOptions,
+    DEFAULT_OUTPUT_OPTIONS,
+  );
   const [visualStyle, setVisualStyle] = useLocalStorage<VisualStyleOption>(
     STORAGE_KEYS.teachingEngineVisualStyle,
     DEFAULT_VISUAL_STYLE,
@@ -490,12 +652,18 @@ function RouteComponent() {
     [activeExtractedItems],
   );
 
+  const detectedSubject = actionableExtractedItems[0]?.subject ?? extracted.subject;
+  const relevantOutputOptions = useMemo(
+    () => getRelevantOutputOptions(detectedSubject),
+    [detectedSubject],
+  );
+
   const promptSummary = useMemo(() => {
     const items = actionableExtractedItems;
     if (items.length === 0) return null;
 
     const uniqueSubjects = Array.from(new Set(items.map((item) => item.subject).filter((value) => !UNKNOWN_VALUES.has(value))));
-    const readingMinutes = Math.max(3, Math.min(12, Math.round(items.length * 1.4 + depthOptions.length * 0.2)));
+    const readingMinutes = Math.max(3, Math.min(12, Math.round(items.length * 1.4 + selectedOutputOptions.length * 0.2)));
     const readingRange = `${Math.max(2, readingMinutes - 1)}-${readingMinutes + 1} minutes`;
 
     return {
@@ -505,10 +673,10 @@ function RouteComponent() {
       teachingStyle: explanationStyle,
       visualStyle,
       learnerProfile: studentProfile.length > 0 ? studentProfile.join(", ") : "Average",
-      estimatedOutput: depthOptions,
+      estimatedOutput: selectedOutputOptions,
       estimatedReadingTime: readingRange,
     };
-  }, [actionableExtractedItems, depthOptions, explanationStyle, files.length, studentProfile, visualStyle]);
+  }, [actionableExtractedItems, explanationStyle, files.length, selectedOutputOptions, studentProfile, visualStyle]);
 
   const hasAcademicContent = useMemo(
     () => actionableExtractedItems.length > 0,
@@ -545,6 +713,45 @@ function RouteComponent() {
     void saveTeachingEngineFiles(files);
   }, [files, filesLoaded]);
 
+  useEffect(() => {
+    setExtracted((prev) => ({
+      ...DEFAULT_EXTRACTED,
+      ...prev,
+      questionTypes: prev.questionTypes ?? [],
+      formulae: prev.formulae ?? [],
+      numericalQuestions: prev.numericalQuestions ?? [],
+      diagrams: prev.diagrams ?? [],
+      keywords: prev.keywords ?? [],
+      language: prev.language ?? "Not identified",
+      examImportance: prev.examImportance ?? "Not identified",
+      hasTables: prev.hasTables ?? false,
+      hasExercises: prev.hasExercises ?? false,
+    }));
+
+    setExtractedItems((prev) =>
+      prev.map((item) => ({
+        ...DEFAULT_EXTRACTED,
+        ...item,
+        questionTypes: item.questionTypes ?? [],
+        formulae: item.formulae ?? [],
+        numericalQuestions: item.numericalQuestions ?? [],
+        diagrams: item.diagrams ?? [],
+        keywords: item.keywords ?? [],
+        language: item.language ?? "Not identified",
+        examImportance: item.examImportance ?? "Not identified",
+        hasTables: item.hasTables ?? false,
+        hasExercises: item.hasExercises ?? false,
+      })),
+    );
+  }, [setExtracted, setExtractedItems]);
+
+  useEffect(() => {
+    setSelectedOutputOptions((prev) => {
+      const safeSet = new Set<OutputOption>(["Normal Solution", ...prev.filter((item): item is OutputOption => OUTPUT_OPTIONS.includes(item as OutputOption))]);
+      return Array.from(safeSet);
+    });
+  }, [setSelectedOutputOptions]);
+
   function toggleProfile(option: StudentProfileOption) {
     setWorkflowStep("profile");
     setStudentProfile((prev) =>
@@ -557,6 +764,26 @@ function RouteComponent() {
     setDepthOptions((prev) =>
       prev.includes(option) ? prev.filter((item) => item !== option) : [...prev, option],
     );
+  }
+
+  function toggleOutputOption(option: OutputOption) {
+    if (option === "Normal Solution") return;
+    setWorkflowStep("generate");
+    setSelectedOutputOptions((prev) =>
+      prev.includes(option)
+        ? prev.filter((item) => item !== option)
+        : ["Normal Solution", ...prev.filter((item) => item !== "Normal Solution"), option],
+    );
+  }
+
+  function selectAllOutputOptions() {
+    setWorkflowStep("generate");
+    setSelectedOutputOptions([...relevantOutputOptions]);
+  }
+
+  function clearOutputOptions() {
+    setWorkflowStep("generate");
+    setSelectedOutputOptions(["Normal Solution"]);
   }
 
   async function processFiles(selected: File[], append: boolean) {
@@ -607,6 +834,7 @@ function RouteComponent() {
     setWorkflowStep("upload");
     setStudentProfile(DEFAULT_STUDENT_PROFILE);
     setDepthOptions(DEFAULT_DEPTH_OPTIONS);
+    setSelectedOutputOptions(DEFAULT_OUTPUT_OPTIONS);
     setVisualStyle(DEFAULT_VISUAL_STYLE);
     setExplanationStyle(DEFAULT_EXPLANATION_STYLE);
     setObjective(DEFAULT_OBJECTIVE);
@@ -701,6 +929,7 @@ function RouteComponent() {
         extractedItems: nextExtractedItems,
         studentProfile,
         depthOptions,
+        selectedOutputOptions,
         visualStyle,
         explanationStyle,
         objective,
@@ -908,8 +1137,25 @@ function RouteComponent() {
             <ExtractField label="Chapter" value={extracted.chapter} onChange={(value) => setExtracted((prev) => ({ ...prev, chapter: value }))} />
             <ExtractField label="Topic" value={extracted.topic} onChange={(value) => setExtracted((prev) => ({ ...prev, topic: value }))} />
             <ExtractField label="Question type" value={extracted.questionType} onChange={(value) => setExtracted((prev) => ({ ...prev, questionType: value }))} />
+            <ExtractField label="Language" value={extracted.language} onChange={(value) => setExtracted((prev) => ({ ...prev, language: value }))} />
+            <ExtractField label="Exam importance" value={extracted.examImportance} onChange={(value) => setExtracted((prev) => ({ ...prev, examImportance: value }))} />
+            <ExtractField
+              label="Contains tables"
+              value={extracted.hasTables ? "Yes" : "No"}
+              onChange={(value) => setExtracted((prev) => ({ ...prev, hasTables: /^y(es)?$/i.test(value.trim()) }))}
+            />
+            <ExtractField
+              label="Contains exercises"
+              value={extracted.hasExercises ? "Yes" : "No"}
+              onChange={(value) => setExtracted((prev) => ({ ...prev, hasExercises: /^y(es)?$/i.test(value.trim()) }))}
+            />
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <ExtractListField
+              label="Question types"
+              values={extracted.questionTypes}
+              onChange={(values) => setExtracted((prev) => ({ ...prev, questionTypes: values }))}
+            />
             <ExtractListField
               label="Formulae"
               values={extracted.formulae}
@@ -933,8 +1179,91 @@ function RouteComponent() {
           </div>
         </section>
 
+        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              <Sparkles size={14} />
+              <span>3. Output Options</span>
+            </div>
+            <span className="rounded-full border border-border bg-background/60 px-3 py-1 text-xs text-muted-foreground">
+              Subject-aware options
+            </span>
+          </div>
+
+          <div className="mb-3 rounded-2xl border border-border bg-background/50 px-3 py-2 text-xs text-muted-foreground">
+            Detected subject: {detectedSubject || "Not identified"}. Showing relevant options only.
+          </div>
+
+          <div className="relative rounded-2xl border border-border bg-background/45">
+            <div className="max-h-[24rem] overflow-y-auto p-3 pb-24">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {relevantOutputOptions.map((option) => {
+                  const selected = selectedOutputOptions.includes(option);
+                  const locked = option === "Normal Solution";
+
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={selected}
+                      aria-label={option}
+                      disabled={locked}
+                      onClick={() => toggleOutputOption(option)}
+                      className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+                        selected
+                          ? "border-primary/60 bg-primary/10 text-foreground"
+                          : "border-border bg-card/50 text-foreground"
+                      } ${locked ? "cursor-not-allowed" : "hover:border-primary/40"}`}
+                    >
+                      <span
+                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-sm font-semibold ${
+                          selected
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background text-transparent"
+                        }`}
+                      >
+                        ✓
+                      </span>
+                      <span className="text-base font-semibold leading-6">{OUTPUT_OPTION_LABELS[option]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="absolute inset-x-0 bottom-0 border-t border-border bg-card/95 p-3 backdrop-blur">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={selectAllOutputOptions}
+                  className="rounded-xl border border-border bg-background/70 px-3 py-3 text-sm font-semibold text-foreground"
+                >
+                  Select All
+                </button>
+                <button
+                  type="button"
+                  onClick={clearOutputOptions}
+                  className="rounded-xl border border-border bg-background/70 px-3 py-3 text-sm font-semibold text-foreground"
+                >
+                  Clear All
+                </button>
+                <button
+                  type="button"
+                  onClick={buildPrompt}
+                  disabled={isBuildingPrompt}
+                  className="rounded-xl px-3 py-3 text-sm font-semibold text-primary-foreground"
+                  style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
+                >
+                  {isBuildingPrompt ? "Generating..." : "Generate Prompt"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="rounded-3xl border border-border bg-card/70 p-5 shadow-[var(--shadow-elegant)] backdrop-blur md:p-6">
-          <div className="mb-5 text-xl font-semibold tracking-[0.02em] text-foreground md:text-2xl">3. Student Profile</div>
+          <div className="mb-5 text-xl font-semibold tracking-[0.02em] text-foreground md:text-2xl">4. Student Profile</div>
           <div className="space-y-7">
             {PROFILE_GROUPS.map((group) => {
               const Icon = group.icon;
@@ -964,7 +1293,7 @@ function RouteComponent() {
         </section>
 
         <section className="rounded-3xl border border-border bg-card/70 p-5 shadow-[var(--shadow-elegant)] backdrop-blur md:p-6">
-          <div className="mb-5 text-xl font-semibold tracking-[0.02em] text-foreground md:text-2xl">4. Teaching Depth</div>
+          <div className="mb-5 text-xl font-semibold tracking-[0.02em] text-foreground md:text-2xl">5. Teaching Depth</div>
           <div className="mb-5 space-y-7">
             {DEPTH_GROUPS.map((group) => (
               <div key={group.heading} className="space-y-4">
@@ -1016,7 +1345,7 @@ function RouteComponent() {
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               <Sparkles size={14} />
-              <span>5. Generate Prompt</span>
+              <span>6. Generate Prompt</span>
             </div>
             <button
               type="button"

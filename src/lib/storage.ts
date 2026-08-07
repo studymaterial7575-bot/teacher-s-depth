@@ -70,6 +70,7 @@ export const STORAGE_KEYS = {
   teachingEngineExtractedItems: "td.teaching-engine.extracted-items",
   teachingEngineStudentProfile: "td.teaching-engine.student-profile",
   teachingEngineDepthOptions: "td.teaching-engine.depth-options",
+  teachingEngineOutputOptions: "td.teaching-engine.output-options",
   teachingEngineVisualStyle: "td.teaching-engine.visual-style",
   teachingEngineExplanationStyle: "td.teaching-engine.explanation-style",
   teachingEngineObjective: "td.teaching-engine.objective",

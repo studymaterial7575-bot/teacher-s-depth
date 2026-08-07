@@ -339,6 +339,71 @@ function detectQuestionType(segment: string) {
   return { value: UNKNOWN, confidence: 0.35 };
 }
 
+function detectQuestionTypes(segment: string) {
+  const lower = normalize(segment);
+  const types = new Set<string>();
+
+  if (/\b(mcq|multiple choice|true\s*or\s*false|objective)\b/.test(lower)) {
+    types.add("Objective");
+  }
+
+  if (/\b(calculate|find|compute|evaluate|determine)\b/.test(lower)) {
+    types.add("Numerical");
+  }
+
+  if (/\b(draw|label|sketch|diagram|plot)\b/.test(lower)) {
+    types.add("Diagram Required");
+  }
+
+  if (/\b(explain|describe|discuss|why|how)\b/.test(lower)) {
+    types.add("Long Answer");
+  }
+
+  if (/\b(state|define|name|list)\b/.test(lower)) {
+    types.add("Short Answer");
+  }
+
+  if (types.size === 0) {
+    types.add(UNKNOWN);
+  }
+
+  return Array.from(types);
+}
+
+function detectLanguage(text: string) {
+  if (/[\u0900-\u097F]/.test(text)) {
+    const lower = normalize(text);
+    if (/\bआहे\b|\bम्हणजे\b|\bकाय\b/.test(lower)) {
+      return { value: "Marathi", confidence: 0.8 };
+    }
+    return { value: "Hindi", confidence: 0.78 };
+  }
+
+  return { value: "English", confidence: 0.7 };
+}
+
+function detectHasTables(text: string) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const tableLikeLineCount = lines.filter((line) => /\|/.test(line) || /\t/.test(line)).length;
+  const columnLineCount = lines.filter((line) => /\b\w+\s{2,}\w+\s{2,}\w+/.test(line)).length;
+  return tableLikeLineCount >= 1 || columnLineCount >= 2;
+}
+
+function detectHasExercises(text: string) {
+  return /\b(exercise|worksheet|practice set|assignment|homework|q\.?\s*\d+)\b/i.test(text);
+}
+
+function detectExamImportance(text: string) {
+  const lower = normalize(text);
+  if (/\b(board exam|final exam|important|very important|frequently asked|5 marks|3 marks|2 marks)\b/.test(lower)) {
+    return "High";
+  }
+  if (/\b(exam|assessment|test|revision)\b/.test(lower)) {
+    return "Medium";
+  }
+  return "Not identified";
+}
+
 function extractFormulae(segment: string) {
   return segment
     .split(/\r?\n/)
@@ -390,12 +455,17 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
 
   const boardGuess = detectBoard(cleaned);
   const classGuess = detectClassLevel(cleaned);
+  const languageGuess = detectLanguage(cleaned);
+  const hasTables = detectHasTables(cleaned);
+  const hasExercises = detectHasExercises(cleaned);
+  const examImportance = detectExamImportance(cleaned);
   const blocks = splitIntoQuestionBlocks(cleaned);
 
   const questions = blocks.map((block) => {
     const subjectGuess = detectSubject(block);
     const topicAndChapter = detectTopicAndChapter(block, subjectGuess.subject);
     const questionType = detectQuestionType(block);
+    const questionTypes = detectQuestionTypes(block);
 
     return {
       ocrText: block,
@@ -405,6 +475,11 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
       chapter: enforceConfidence(topicAndChapter.chapter, topicAndChapter.chapterConfidence),
       topic: enforceConfidence(topicAndChapter.topic, topicAndChapter.topicConfidence),
       questionType: enforceConfidence(questionType.value, questionType.confidence),
+      questionTypes,
+      language: enforceConfidence(languageGuess.value, languageGuess.confidence),
+      hasTables,
+      hasExercises,
+      examImportance,
       formulae: extractFormulae(block),
       numericalQuestions: extractNumericalQuestions(block),
       diagrams: extractDiagramPrompts(block),
@@ -416,6 +491,7 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
         chapter: topicAndChapter.chapterConfidence,
         topic: topicAndChapter.topicConfidence,
         questionType: questionType.confidence,
+        language: languageGuess.confidence,
       },
     } satisfies ExtractedContent;
   });
@@ -431,6 +507,11 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
           chapter: UNKNOWN,
           topic: UNKNOWN,
           questionType: UNKNOWN,
+          questionTypes: [UNKNOWN],
+          language: enforceConfidence(languageGuess.value, languageGuess.confidence),
+          hasTables,
+          hasExercises,
+          examImportance,
           formulae: extractFormulae(cleaned),
           numericalQuestions: extractNumericalQuestions(cleaned),
           diagrams: extractDiagramPrompts(cleaned),
@@ -442,6 +523,7 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
             chapter: 0.2,
             topic: 0.2,
             questionType: 0.35,
+            language: languageGuess.confidence,
           },
         },
       ];

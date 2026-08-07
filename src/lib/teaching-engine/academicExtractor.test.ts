@@ -157,6 +157,7 @@ describe("academic extraction pipeline", () => {
       extractedItems: items,
       studentProfile: profile,
       depthOptions: depth,
+      selectedOutputOptions: ["Normal Solution", "Logical Flow", "Create Teaching Image"],
       visualStyle: visual,
       explanationStyle: explanation,
       objective: "Generate classroom-ready output.",

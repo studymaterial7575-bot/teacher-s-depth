@@ -78,10 +78,36 @@ export const EXPLANATION_STYLE_OPTIONS = [
   "Parent-friendly home tutoring style",
 ] as const;
 
+export const OUTPUT_OPTIONS = [
+  "Normal Solution",
+  "Background",
+  "Formula Breakdown",
+  "Logical Flow",
+  "Visual Explanation",
+  "Real-life Analogy",
+  "Exam Importance",
+  "Common Mistakes",
+  "Predicted Doubts",
+  "Classroom Teaching Script",
+  "Blackboard Writing",
+  "Homework",
+  "Practice Questions",
+  "Revision Notes",
+  "Word Meanings",
+  "Grammar Explanation",
+  "Timeline",
+  "Map Explanation",
+  "Flowchart",
+  "Mind Map",
+  "Infographic",
+  "Create Teaching Image",
+] as const;
+
 export type StudentProfileOption = (typeof STUDENT_PROFILE_OPTIONS)[number];
 export type DepthOption = (typeof DEPTH_OPTIONS)[number];
 export type VisualStyleOption = (typeof VISUAL_STYLE_OPTIONS)[number];
 export type ExplanationStyleOption = (typeof EXPLANATION_STYLE_OPTIONS)[number];
+export type OutputOption = (typeof OUTPUT_OPTIONS)[number];
 
 export type ExtractedContent = {
   ocrText: string;
@@ -91,6 +117,11 @@ export type ExtractedContent = {
   chapter: string;
   topic: string;
   questionType: string;
+  questionTypes: string[];
+  language: string;
+  hasTables: boolean;
+  hasExercises: boolean;
+  examImportance: string;
   formulae: string[];
   numericalQuestions: string[];
   diagrams: string[];
@@ -102,6 +133,7 @@ export type ExtractedContent = {
     chapter: number;
     topic: number;
     questionType: number;
+    language: number;
   };
 };
 
@@ -111,6 +143,7 @@ export type PromptBuilderInput = {
   extractedItems?: ExtractedContent[];
   studentProfile: StudentProfileOption[];
   depthOptions: DepthOption[];
+  selectedOutputOptions: OutputOption[];
   visualStyle: VisualStyleOption;
   explanationStyle: ExplanationStyleOption;
   objective: string;

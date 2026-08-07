@@ -10,6 +10,7 @@ function buildSinglePrompt(input: PromptBuilderInput) {
     extracted,
     studentProfile,
     depthOptions,
+    selectedOutputOptions,
     visualStyle,
     explanationStyle,
     objective,
@@ -18,6 +19,7 @@ function buildSinglePrompt(input: PromptBuilderInput) {
   const fileList = sourceFiles.length > 0 ? sourceFiles : ["No files attached"];
   const profileList = studentProfile.length > 0 ? studentProfile : ["Average"];
   const depthList = depthOptions.length > 0 ? depthOptions : ["Definition", "Worked examples"];
+  const outputOptions = selectedOutputOptions.length > 0 ? selectedOutputOptions : ["Normal Solution"];
   const objectiveLine = objective.trim() || "Generate a clear classroom-ready explanation for this learner.";
   const ocrPreview = extracted.ocrText.trim() || "No OCR text provided. Use extracted metadata and inferred chapter context.";
 
@@ -33,6 +35,12 @@ EXTRACTED CONTENT:
 - Chapter: ${extracted.chapter}
 - Topic: ${extracted.topic}
 - Question type: ${extracted.questionType}
+- Question type (primary): ${extracted.questionType}
+- Question types detected: ${extracted.questionTypes.length > 0 ? extracted.questionTypes.join(" | ") : "Not identified"}
+- Language: ${extracted.language}
+- Contains tables: ${extracted.hasTables ? "Yes" : "No"}
+- Contains exercises: ${extracted.hasExercises ? "Yes" : "No"}
+- Exam importance: ${extracted.examImportance}
 - Formulae: ${extracted.formulae.length > 0 ? extracted.formulae.join(" | ") : "Not identified"}
 - Numerical questions: ${extracted.numericalQuestions.length > 0 ? extracted.numericalQuestions.join(" | ") : "Not identified"}
 - Diagrams: ${extracted.diagrams.length > 0 ? extracted.diagrams.join(" | ") : "Not identified"}
@@ -44,6 +52,8 @@ ${block("STUDENT PROFILE", profileList)}
 
 ${block("TEACHING DEPTH REQUIRED", depthList)}
 
+${block("SELECTED OUTPUT OPTIONS", outputOptions)}
+
 REQUIRED VISUAL STYLE:
 - ${visualStyle}
 
@@ -54,19 +64,19 @@ TEACHING OBJECTIVE:
 - ${objectiveLine}
 
 OUTPUT FORMATTING INSTRUCTIONS:
-- Use clear section headings with this exact order:
-  1) Quick context
-  2) Core explanation
-  3) Visual plan
-  4) Worked examples
-  5) Common mistakes and corrections
-  6) Revision and memory support
-  7) Practice or viva set
+- Respond in exactly three sections with these headings:
+  1) SECTION 1: Normal Solution
+  2) SECTION 2: Scrollable Deep Learning Section
+  3) SECTION 3: Create Teaching Image
+- SECTION 1 must always be concise and immediately usable in tuition/class.
+- SECTION 2 must include only requested output options except Normal Solution and Create Teaching Image.
+- SECTION 3 must provide one comprehensive infographic blueprint covering all selected topics.
 - Use plain text only.
 - Use bullet points for recall-heavy parts.
-- Keep language aligned with the selected learner profile.
+- Keep language aligned with the selected learner profile and detected document language.
 - If formulas are used, explain variables before substitution.
-- If visuals are required, describe the diagram layout step-by-step so a teacher can draw it on board.
+- If visuals are required, describe board-drawing layout and labeling steps.
+- For social science include timeline/map when selected. For languages include grammar/word-meaning when selected.
 - End with a short "Teacher delivery note" in 2-3 lines.
 
 Do not ask follow-up questions. Generate the full educational response now.`;

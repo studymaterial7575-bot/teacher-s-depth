@@ -226,3 +226,57 @@ Teacher's Depth is a full-stack learning platform providing deep, structured con
 ---
 
 **Next Step:** Start Phase 2 by adding 5 new chapters to a subject. See `ARCHITECTURE.md` for detailed instructions.
+
+---
+
+## 2026-08-07 Checkpoint Reset (Teacher OS Baseline)
+
+This section updates the execution order without deleting prior roadmap history.
+
+### Phase 0 (Mandatory) — Runnable Prompt Builder Baseline
+
+Objective:
+- Keep the app fully runnable before advanced feature expansion.
+
+Completion criteria:
+- npm install runs successfully.
+- npm run dev launches localhost.
+- /teaching-engine opens correctly.
+- End-to-end primary workflow works:
+	Upload -> AI Analysis -> Scrollable Output Options -> Generate Prompt -> Display Generated Prompt.
+
+### Phase 1 (Current Product Direction) — Teacher Operating System Core
+
+Scope decisions captured at checkpoint:
+- Single-subject upload model.
+- Input coverage: image, OCR text, typed text, handwritten notes, single-page PDF, multi-page PDF, large PDFs.
+- Automatic detection targets: board, class, subject, chapter, topic, language, formulas, diagrams, tables, exercises.
+- Subject-aware output option selector with multi-select and Normal Solution always visible.
+- Prompt Builder remains primary workflow.
+
+### Phase 2 — Teaching Output Expansion
+
+Planned deliverables:
+- Scrollable deep learning output rendering from generated response.
+- Comprehensive teaching image generation path.
+- Image re-import and automatic teaching-card extraction.
+
+### Phase 3 — Teaching Deliverables
+
+Planned deliverables:
+- Teaching PDF generation (one teaching card per page).
+- Mobile swipeable teaching deck.
+
+### Phase 4 — Large PDF Intelligence
+
+Planned deliverables:
+- Outline-first large-PDF analysis flow.
+- Section chooser before deep generation.
+- Lazy generation/token optimization for selected sections only.
+
+### Phase 5 — Optimization and Cost Controls
+
+Planned deliverables:
+- Fast initial response strategy.
+- Deferred deep generation.
+- Token and API cost optimization with caching where relevant.
