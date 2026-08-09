@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { extractAcademicQuestions } from "@/lib/teaching-engine/academicExtractor";
-import { buildPromptTexts } from "@/lib/teaching-engine/promptBuilder";
+import { buildPromptTexts, createResearchPrompt, detectGhostStoryInterest } from "@/lib/teaching-engine/promptBuilder";
 import type {
   DepthOption,
   ExplanationStyleOption,
@@ -167,5 +167,37 @@ describe("academic extraction pipeline", () => {
     expect(prompts[0]).toContain("Subject: Physics");
     expect(prompts[1]).toContain("Subject: Biology");
     expect(prompts[0]).not.toContain("Subject: Biology");
+    expect(prompts[0]).toContain("SOURCE CONTENT ONLY");
+    expect(prompts[0]).toContain("IMPORTANT ADDITIONAL EXAM COVERAGE");
+    expect(prompts[0]).toContain("Do not reuse previous teaching context");
+  });
+
+  it("detects ghost story interest and produces a classroom-safe research prompt", () => {
+    const input = "Students really like real ghost stories. Find me an interesting one.";
+    const signal = detectGhostStoryInterest(input);
+
+    expect(signal.kind).toBe("ghost_story");
+    expect(signal.confidence).toBeGreaterThan(0.5);
+
+    const prompt = createResearchPrompt(input);
+    expect(prompt).not.toBe("");
+    expect(prompt).toContain("ENTERTAINMENT + CURIOSITY + REAL-WORLD STORY");
+    expect(prompt).toContain("Do not present paranormal or supernatural claims as scientifically proven");
+    expect(prompt).toContain("Verified facts");
+    expect(prompt).toContain("YouTube claims");
+    expect(prompt).toContain("What do you think happened?");
+  });
+
+  it("recognizes ghost stories from Mumbai and YouTube discovery paths", () => {
+    const input = "Tell me about a real ghost story from Mumbai and what YouTube episodes claim.";
+    const signal = detectGhostStoryInterest(input);
+
+    expect(signal.kind).toBe("ghost_story");
+    expect(signal.confidence).toBeGreaterThan(0.5);
+
+    const prompt = createResearchPrompt(input);
+    expect(prompt).toContain("Mumbai");
+    expect(prompt).toContain("original/reliable reporting");
+    expect(prompt).toContain("source verification");
   });
 });

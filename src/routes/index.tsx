@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
-import { Camera, FileImage, FileText, Flame, GraduationCap, History, Sparkles, Trophy } from "lucide-react";
+import { Camera, FileImage, FileText, Flame, History, Sparkles, Trophy } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Stars } from "@/components/Stars";
 import { CHAPTERS, SUBJECTS } from "@/lib/data";
@@ -91,7 +91,6 @@ function Index() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <QuickTile href="/companion" icon={Sparkles} label="Ask AI" tone="from-emerald-500/30 to-teal-500/10" />
           <QuickTile href="/bookmarks" icon={Trophy} label="My Saved" tone="from-amber-500/30 to-orange-500/10" />
-          <QuickTile href="/tools" icon={GraduationCap} label="Study Tools" tone="from-sky-500/30 to-indigo-500/10" />
           <QuickTile href="/search" icon={History} label="Search" tone="from-fuchsia-500/30 to-purple-500/10" />
         </div>
       </section>

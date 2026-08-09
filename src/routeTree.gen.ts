@@ -16,6 +16,7 @@ import { Route as CompanionRouteImport } from './routes/companion'
 import { Route as BookmarksRouteImport } from './routes/bookmarks'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SubjectsSlugRouteImport } from './routes/subjects.$slug'
+import { Route as ApiTeachingImageAnalyzeRouteImport } from './routes/api/teaching-image-analyze'
 import { Route as ApiDiagramImageRouteImport } from './routes/api/diagram-image'
 import { Route as ApiAnalyzeRouteImport } from './routes/api/analyze'
 import { Route as ChapterSubjectChapterRouteImport } from './routes/chapter.$subject.$chapter'
@@ -55,6 +56,11 @@ const SubjectsSlugRoute = SubjectsSlugRouteImport.update({
   path: '/subjects/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTeachingImageAnalyzeRoute = ApiTeachingImageAnalyzeRouteImport.update({
+  id: '/api/teaching-image-analyze',
+  path: '/api/teaching-image-analyze',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDiagramImageRoute = ApiDiagramImageRouteImport.update({
   id: '/api/diagram-image',
   path: '/api/diagram-image',
@@ -80,6 +86,7 @@ export interface FileRoutesByFullPath {
   '/tools': typeof ToolsRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/diagram-image': typeof ApiDiagramImageRoute
+  '/api/teaching-image-analyze': typeof ApiTeachingImageAnalyzeRoute
   '/subjects/$slug': typeof SubjectsSlugRoute
   '/chapter/$subject/$chapter': typeof ChapterSubjectChapterRoute
 }
@@ -92,6 +99,7 @@ export interface FileRoutesByTo {
   '/tools': typeof ToolsRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/diagram-image': typeof ApiDiagramImageRoute
+  '/api/teaching-image-analyze': typeof ApiTeachingImageAnalyzeRoute
   '/subjects/$slug': typeof SubjectsSlugRoute
   '/chapter/$subject/$chapter': typeof ChapterSubjectChapterRoute
 }
@@ -105,6 +113,7 @@ export interface FileRoutesById {
   '/tools': typeof ToolsRoute
   '/api/analyze': typeof ApiAnalyzeRoute
   '/api/diagram-image': typeof ApiDiagramImageRoute
+  '/api/teaching-image-analyze': typeof ApiTeachingImageAnalyzeRoute
   '/subjects/$slug': typeof SubjectsSlugRoute
   '/chapter/$subject/$chapter': typeof ChapterSubjectChapterRoute
 }
@@ -119,6 +128,7 @@ export interface FileRouteTypes {
     | '/tools'
     | '/api/analyze'
     | '/api/diagram-image'
+    | '/api/teaching-image-analyze'
     | '/subjects/$slug'
     | '/chapter/$subject/$chapter'
   fileRoutesByTo: FileRoutesByTo
@@ -131,6 +141,7 @@ export interface FileRouteTypes {
     | '/tools'
     | '/api/analyze'
     | '/api/diagram-image'
+    | '/api/teaching-image-analyze'
     | '/subjects/$slug'
     | '/chapter/$subject/$chapter'
   id:
@@ -143,6 +154,7 @@ export interface FileRouteTypes {
     | '/tools'
     | '/api/analyze'
     | '/api/diagram-image'
+    | '/api/teaching-image-analyze'
     | '/subjects/$slug'
     | '/chapter/$subject/$chapter'
   fileRoutesById: FileRoutesById
@@ -156,6 +168,7 @@ export interface RootRouteChildren {
   ToolsRoute: typeof ToolsRoute
   ApiAnalyzeRoute: typeof ApiAnalyzeRoute
   ApiDiagramImageRoute: typeof ApiDiagramImageRoute
+  ApiTeachingImageAnalyzeRoute: typeof ApiTeachingImageAnalyzeRoute
   SubjectsSlugRoute: typeof SubjectsSlugRoute
   ChapterSubjectChapterRoute: typeof ChapterSubjectChapterRoute
 }
@@ -211,6 +224,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SubjectsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/teaching-image-analyze': {
+      id: '/api/teaching-image-analyze'
+      path: '/api/teaching-image-analyze'
+      fullPath: '/api/teaching-image-analyze'
+      preLoaderRoute: typeof ApiTeachingImageAnalyzeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/diagram-image': {
       id: '/api/diagram-image'
       path: '/api/diagram-image'
@@ -244,6 +264,7 @@ const rootRouteChildren: RootRouteChildren = {
   ToolsRoute: ToolsRoute,
   ApiAnalyzeRoute: ApiAnalyzeRoute,
   ApiDiagramImageRoute: ApiDiagramImageRoute,
+  ApiTeachingImageAnalyzeRoute: ApiTeachingImageAnalyzeRoute,
   SubjectsSlugRoute: SubjectsSlugRoute,
   ChapterSubjectChapterRoute: ChapterSubjectChapterRoute,
 }

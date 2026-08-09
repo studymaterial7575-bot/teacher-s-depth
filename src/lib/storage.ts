@@ -75,6 +75,10 @@ export const STORAGE_KEYS = {
   teachingEngineExplanationStyle: "td.teaching-engine.explanation-style",
   teachingEngineObjective: "td.teaching-engine.objective",
   teachingEnginePrompt: "td.teaching-engine.prompt",
+  teachingEngineResponse: "td.teaching-engine.response",
+  teachingEngineImageSpec: "td.teaching-engine.image-spec",
+  teachingEngineImageAnalysis: "td.teaching-engine.image-analysis",
+  teachingEngineCards: "td.teaching-engine.cards",
   teachingEngineWorkflowStep: "td.teaching-engine.workflow-step",
 } as const;
 

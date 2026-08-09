@@ -2,6 +2,7 @@
 import { Camera, Check, FileText, GraduationCap, Loader2, Presentation, Sparkles, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { MasterImageWorkflow } from "@/components/teaching-engine/MasterImageWorkflow";
 import { PromptPreview } from "@/components/teaching-engine/PromptPreview";
 import { extractAcademicQuestions } from "@/lib/teaching-engine/academicExtractor";
 import { buildPromptTexts } from "@/lib/teaching-engine/promptBuilder";
@@ -85,6 +86,10 @@ const DEFAULT_OUTPUT_OPTIONS: OutputOption[] = ["Normal Solution"];
 const DEFAULT_VISUAL_STYLE: VisualStyleOption = "Simple labeled diagram";
 const DEFAULT_EXPLANATION_STYLE: ExplanationStyleOption = "Simple classroom language";
 const DEFAULT_OBJECTIVE = "Build a student-friendly explanation that can be directly used in class and for exam preparation.";
+const FILE_PROCESSING_TIMEOUT_MS = 30000;
+const OCR_TIMEOUT_MS = 30000;
+const MAX_OCR_DIMENSION = 1800;
+type FileProcessingState = "idle" | "processing" | "success" | "error" | "timeout" | "cancelled";
 
 const BUILD_STAGE_LABELS: Array<{ id: BuildStageId; label: string }> = [
   { id: "ocr", label: "OCR" },
@@ -102,24 +107,28 @@ const OUTPUT_OPTION_LABELS: Record<OutputOption, string> = {
   "Formula Breakdown": "Formula Breakdown",
   "Logical Flow": "Logical Flow",
   "Visual Explanation": "Visual Explanation",
+  "Dissected Visual": "Dissected Visual",
   "Real-life Analogy": "Real-life Analogy",
   "Exam Importance": "Exam Importance",
   "Common Mistakes": "Common Mistakes",
-  "Predicted Doubts": "Predicted Doubts",
-  "Classroom Teaching Script": "Classroom Teaching Script",
-  "Blackboard Writing": "Blackboard Writing",
-  Homework: "Homework",
+  "Memory Tricks": "Memory Tricks",
   "Practice Questions": "Practice Questions",
   "Revision Notes": "Revision Notes",
   "Word Meanings": "Word Meanings",
   "Grammar Explanation": "Grammar Explanation",
+  Usage: "Usage",
+  Examples: "Examples",
+  "Common Errors": "Common Errors",
   Timeline: "Timeline",
   "Map Explanation": "Map Explanation",
+  "Cause and Effect": "Cause and Effect",
   Flowchart: "Flowchart",
   "Mind Map": "Mind Map",
   Infographic: "Infographic",
   "Create Teaching Image": "Create Teaching Image",
 };
+
+const SELECTABLE_OUTPUT_OPTIONS = OUTPUT_OPTIONS.filter((option) => option !== "Normal Solution") as OutputOption[];
 
 const STEM_SUBJECTS = new Set(["Mathematics", "Physics", "Chemistry", "Biology", "Computer", "Commerce"]);
 const LANGUAGE_SUBJECTS = new Set(["English", "Hindi", "Marathi"]);
@@ -212,26 +221,24 @@ function normalize(value: string) {
 function getRelevantOutputOptions(subject: string) {
   const normalized = subject.trim();
   if (!normalized || UNKNOWN_VALUES.has(normalized)) {
-    return OUTPUT_OPTIONS;
+    return SELECTABLE_OUTPUT_OPTIONS;
   }
 
   if (STEM_SUBJECTS.has(normalized)) {
-    return OUTPUT_OPTIONS.filter((option) =>
+    return SELECTABLE_OUTPUT_OPTIONS.filter((option) =>
       [
-        "Normal Solution",
         "Background",
         "Formula Breakdown",
         "Logical Flow",
         "Visual Explanation",
+        "Dissected Visual",
         "Real-life Analogy",
         "Exam Importance",
         "Common Mistakes",
-        "Predicted Doubts",
-        "Classroom Teaching Script",
-        "Blackboard Writing",
-        "Homework",
+        "Memory Tricks",
         "Practice Questions",
         "Revision Notes",
+        "Timeline",
         "Flowchart",
         "Mind Map",
         "Infographic",
@@ -241,22 +248,21 @@ function getRelevantOutputOptions(subject: string) {
   }
 
   if (LANGUAGE_SUBJECTS.has(normalized)) {
-    return OUTPUT_OPTIONS.filter((option) =>
+    return SELECTABLE_OUTPUT_OPTIONS.filter((option) =>
       [
-        "Normal Solution",
         "Background",
         "Logical Flow",
         "Real-life Analogy",
         "Exam Importance",
         "Common Mistakes",
-        "Predicted Doubts",
-        "Classroom Teaching Script",
-        "Blackboard Writing",
-        "Homework",
+        "Memory Tricks",
         "Practice Questions",
         "Revision Notes",
         "Word Meanings",
         "Grammar Explanation",
+        "Usage",
+        "Examples",
+        "Common Errors",
         "Mind Map",
         "Infographic",
         "Create Teaching Image",
@@ -265,23 +271,20 @@ function getRelevantOutputOptions(subject: string) {
   }
 
   if (SOCIAL_SUBJECTS.has(normalized)) {
-    return OUTPUT_OPTIONS.filter((option) =>
+    return SELECTABLE_OUTPUT_OPTIONS.filter((option) =>
       [
-        "Normal Solution",
         "Background",
         "Logical Flow",
         "Visual Explanation",
         "Real-life Analogy",
         "Exam Importance",
         "Common Mistakes",
-        "Predicted Doubts",
-        "Classroom Teaching Script",
-        "Blackboard Writing",
-        "Homework",
+        "Memory Tricks",
         "Practice Questions",
         "Revision Notes",
         "Timeline",
         "Map Explanation",
+        "Cause and Effect",
         "Flowchart",
         "Mind Map",
         "Infographic",
@@ -290,7 +293,7 @@ function getRelevantOutputOptions(subject: string) {
     );
   }
 
-  return OUTPUT_OPTIONS;
+  return SELECTABLE_OUTPUT_OPTIONS;
 }
 
 function inferSubject(text: string) {
@@ -456,13 +459,92 @@ function getFileTag(name: string) {
   return "File";
 }
 
-async function readTextFromFile(file: File): Promise<string> {
+function withTimeout<T>(task: () => Promise<T>, timeoutMs: number, timeoutMessage: string, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new DOMException("Processing was cancelled.", "AbortError"));
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    void task()
+      .then((result) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        resolve(result);
+      })
+      .catch((error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        reject(error);
+      });
+  });
+}
+
+async function preprocessImageForOcr(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.type === "image/svg+xml") return file;
+
+  const sizeLimit = 1.5 * 1024 * 1024;
+  if (file.size <= sizeLimit) return file;
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Failed to decode image."));
+      img.src = objectUrl;
+    });
+
+    const scale = Math.min(1, MAX_OCR_DIMENSION / Math.max(image.width, image.height));
+    if (scale >= 1) return file;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+
+    const context = canvas.getContext("2d");
+    if (!context) return file;
+
+    context.fillStyle = "white";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.84));
+    if (!blob) return file;
+
+    return new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), {
+      type: "image/jpeg",
+      lastModified: Date.now(),
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function readTextFromFile(file: File, signal?: AbortSignal): Promise<string> {
   if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    return extractTextFromPdf(file);
+    return extractTextFromPdf(file, signal);
   }
 
   if (file.type.startsWith("image/")) {
-    return extractTextFromImage(file);
+    return extractTextFromImage(file, signal);
   }
 
   const name = file.name.toLowerCase();
@@ -477,20 +559,21 @@ async function readTextFromFile(file: File): Promise<string> {
   return file.text();
 }
 
-async function extractTextFromPdf(file: File): Promise<string> {
+async function extractTextFromPdf(file: File, signal?: AbortSignal): Promise<string> {
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const pdfWorker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs?url");
     pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker.default;
 
-    const buffer = await file.arrayBuffer();
+    const buffer = await withTimeout(() => file.arrayBuffer(), FILE_PROCESSING_TIMEOUT_MS, "PDF processing took too long. Please try again or upload a clearer/smaller image.", signal);
     const loadingTask = pdfjs.getDocument({ data: buffer });
-    const pdf = await loadingTask.promise;
+    const pdf = await withTimeout(() => loadingTask.promise, FILE_PROCESSING_TIMEOUT_MS, "PDF processing took too long. Please try again or upload a clearer/smaller image.", signal);
     const pageTexts: string[] = [];
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
-      const page = await pdf.getPage(pageNum);
-      const content = await page.getTextContent();
+      if (signal?.aborted) throw new DOMException("Processing was cancelled.", "AbortError");
+      const page = await withTimeout(() => pdf.getPage(pageNum), FILE_PROCESSING_TIMEOUT_MS, "PDF page extraction timed out.", signal);
+      const content = await withTimeout(() => page.getTextContent(), FILE_PROCESSING_TIMEOUT_MS, "PDF text extraction timed out.", signal);
       const text = content.items
         .map((item) => ("str" in item ? item.str : ""))
         .join(" ");
@@ -498,18 +581,23 @@ async function extractTextFromPdf(file: File): Promise<string> {
     }
 
     return pageTexts.join("\n");
-  } catch {
+  } catch (error) {
+    if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+      throw error;
+    }
     return "";
   }
 }
 
-async function extractTextFromImage(file: File): Promise<string> {
+async function extractTextFromImage(file: File, signal?: AbortSignal): Promise<string> {
   try {
+    const optimizedFile = await preprocessImageForOcr(file);
+
     const Detector = (window as unknown as { TextDetector?: new () => { detect: (source: ImageBitmap) => Promise<Array<{ rawValue?: string }>> } }).TextDetector;
     if (Detector) {
-      const bitmap = await createImageBitmap(file);
+      const bitmap = await withTimeout(() => createImageBitmap(optimizedFile), FILE_PROCESSING_TIMEOUT_MS, "Image preprocessing timed out.", signal);
       const detector = new Detector();
-      const blocks = await detector.detect(bitmap);
+      const blocks = await withTimeout(() => detector.detect(bitmap), FILE_PROCESSING_TIMEOUT_MS, "Image OCR timed out.", signal);
       const detectedText = blocks
         .map((block) => block.rawValue?.trim() ?? "")
         .filter(Boolean)
@@ -518,31 +606,59 @@ async function extractTextFromImage(file: File): Promise<string> {
       if (detectedText) return detectedText;
     }
 
-    return extractTextWithTesseract(file);
-  } catch {
-    return extractTextWithTesseract(file);
+    return extractTextWithTesseract(optimizedFile, signal);
+  } catch (error) {
+    if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+      throw error;
+    }
+
+    try {
+      return await extractTextWithTesseract(file, signal);
+    } catch {
+      throw new Error("OCR could not be completed. Text extraction unavailable — you can paste or edit the source text manually.");
+    }
   }
 }
 
-async function extractTextWithTesseract(file: File): Promise<string> {
-  try {
-    const { createWorker } = await import("tesseract.js");
-    const worker = await createWorker("eng", 1, {
-      workerPath: "/tesseract-worker/worker.min.js",
-      corePath: "/tesseract-core",
-      langPath: "/tessdata",
-      gzip: true,
-      workerBlobURL: false,
-    });
+async function extractTextWithTesseract(file: File, signal?: AbortSignal): Promise<string> {
+  let worker: Awaited<ReturnType<typeof import("tesseract.js").createWorker>> | undefined;
 
-    try {
-      const result = await worker.recognize(file);
-      return result.data.text.trim();
-    } finally {
-      await worker.terminate();
+  try {
+    const tesseract = await import("tesseract.js");
+    worker = await withTimeout(
+      () =>
+        tesseract.createWorker("eng", 1, {
+          workerPath: "/tesseract-worker/worker.min.js",
+          corePath: "/tesseract-core",
+          langPath: "/tessdata",
+          gzip: true,
+          workerBlobURL: false,
+        }),
+      OCR_TIMEOUT_MS,
+      "OCR processing is taking too long.",
+      signal,
+    );
+
+    if (!worker) {
+      throw new Error("OCR worker could not initialize.");
     }
-  } catch {
-    return "";
+
+    const result = await withTimeout(
+      () => worker.recognize(file),
+      FILE_PROCESSING_TIMEOUT_MS,
+      "OCR processing is taking too long.",
+      signal,
+    );
+    return result.data.text.trim();
+  } catch (error) {
+    if (signal?.aborted || (error instanceof Error && error.name === "AbortError")) {
+      throw error;
+    }
+    throw new Error("OCR processing is taking too long.");
+  } finally {
+    if (worker) {
+      await worker.terminate().catch(() => undefined);
+    }
   }
 }
 
@@ -590,6 +706,8 @@ function RouteComponent() {
     [],
   );
   const [isExtracting, setIsExtracting] = useState(false);
+  const [processingState, setProcessingState] = useState<FileProcessingState>("idle");
+  const [processingMessage, setProcessingMessage] = useState("Ready to process files.");
   const [intakeError, setIntakeError] = useState<string | null>(null);
   const [studentProfile, setStudentProfile] = useLocalStorage<StudentProfileOption[]>(
     STORAGE_KEYS.teachingEngineStudentProfile,
@@ -603,6 +721,7 @@ function RouteComponent() {
     STORAGE_KEYS.teachingEngineOutputOptions,
     DEFAULT_OUTPUT_OPTIONS,
   );
+  const [quickNumberInput, setQuickNumberInput] = useState("");
   const [visualStyle, setVisualStyle] = useLocalStorage<VisualStyleOption>(
     STORAGE_KEYS.teachingEngineVisualStyle,
     DEFAULT_VISUAL_STYLE,
@@ -630,6 +749,7 @@ function RouteComponent() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadAnotherInputRef = useRef<HTMLInputElement>(null);
   const autoOpenedEntryRef = useRef<string | null>(null);
+  const activeProcessingRef = useRef<{ id: number; controller: AbortController } | null>(null);
 
   const sourceFiles = useMemo(
     () => files.map((file) => `${getFileTag(file.name)}: ${file.name}`),
@@ -656,6 +776,14 @@ function RouteComponent() {
   const relevantOutputOptions = useMemo(
     () => getRelevantOutputOptions(detectedSubject),
     [detectedSubject],
+  );
+  const numberedRelevantOutputOptions = useMemo(
+    () => relevantOutputOptions.map((option, index) => ({
+      index: index + 1,
+      option,
+      label: `${String(index + 1).padStart(2, "0")} ${OUTPUT_OPTION_LABELS[option]}`,
+    })),
+    [relevantOutputOptions],
   );
 
   const promptSummary = useMemo(() => {
@@ -705,6 +833,7 @@ function RouteComponent() {
 
     return () => {
       active = false;
+      cancelActiveProcessing();
     };
   }, []);
 
@@ -769,16 +898,44 @@ function RouteComponent() {
   function toggleOutputOption(option: OutputOption) {
     if (option === "Normal Solution") return;
     setWorkflowStep("generate");
-    setSelectedOutputOptions((prev) =>
-      prev.includes(option)
-        ? prev.filter((item) => item !== option)
-        : ["Normal Solution", ...prev.filter((item) => item !== "Normal Solution"), option],
-    );
+    setSelectedOutputOptions((prev) => {
+      const next = prev.filter((item) => item !== "Normal Solution");
+      return prev.includes(option)
+        ? ["Normal Solution", ...next.filter((item) => item !== option)]
+        : ["Normal Solution", ...next, option];
+    });
+  }
+
+  function applyQuickNumberSelection(rawInput: string) {
+    const selectedNumbers = new Set<number>();
+
+    rawInput
+      .split(",")
+      .flatMap((segment) => segment.split(/\s+/))
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .forEach((value) => {
+        const number = Number.parseInt(value, 10);
+        if (Number.isInteger(number) && number >= 1 && number <= relevantOutputOptions.length) {
+          selectedNumbers.add(number);
+        }
+      });
+
+    const nextSelection = new Set<OutputOption>(["Normal Solution"]);
+    Array.from(selectedNumbers)
+      .sort((a, b) => a - b)
+      .forEach((number) => {
+        const option = relevantOutputOptions[number - 1];
+        if (option) nextSelection.add(option);
+      });
+
+    setSelectedOutputOptions(Array.from(nextSelection));
+    setQuickNumberInput("");
   }
 
   function selectAllOutputOptions() {
     setWorkflowStep("generate");
-    setSelectedOutputOptions([...relevantOutputOptions]);
+    setSelectedOutputOptions(["Normal Solution", ...relevantOutputOptions]);
   }
 
   function clearOutputOptions() {
@@ -786,14 +943,58 @@ function RouteComponent() {
     setSelectedOutputOptions(["Normal Solution"]);
   }
 
+  function cancelActiveProcessing() {
+    const active = activeProcessingRef.current;
+    if (active) {
+      active.controller.abort();
+      activeProcessingRef.current = null;
+    }
+  }
+
   async function processFiles(selected: File[], append: boolean) {
+    const previous = activeProcessingRef.current;
+    if (previous) {
+      previous.controller.abort();
+    }
+
+    const currentController = new AbortController();
+    const processingId = Date.now() + Math.random();
+    activeProcessingRef.current = { id: processingId, controller: currentController };
+
     const combined = append ? [...files, ...selected] : selected;
     setFiles(combined);
     setIsExtracting(true);
+    setProcessingState("processing");
+    setProcessingMessage(
+      combined.some((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"))
+        ? "Processing PDF..."
+        : "Processing image...",
+    );
     setIntakeError(null);
 
     try {
-      const extractedTextParts = await Promise.all(combined.map((file) => readTextFromFile(file)));
+      const extractedTextParts: string[] = [];
+      for (const file of combined) {
+        if (currentController.signal.aborted) {
+          throw new DOMException("Processing was cancelled.", "AbortError");
+        }
+
+        setProcessingMessage(
+          file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+            ? `Processing PDF: ${file.name}`
+            : `Processing image: ${file.name}`,
+        );
+
+        const text = await readTextFromFile(file, currentController.signal);
+        if (text.trim()) {
+          extractedTextParts.push(text.trim());
+        }
+      }
+
+      if (currentController.signal.aborted) {
+        throw new DOMException("Processing was cancelled.", "AbortError");
+      }
+
       const mergedText = extractedTextParts.join("\n\n").trim();
       if (mergedText) {
         setOcrText(mergedText);
@@ -807,15 +1008,43 @@ function RouteComponent() {
           setExtractedItems(nextItems);
           setExtracted(DEFAULT_EXTRACTED);
         }
+        setProcessingState("success");
+        setProcessingMessage("✓ Processing complete");
       } else {
-        setIntakeError("No machine-readable text was found. You can paste OCR text manually for verification.");
+        setProcessingState("error");
+        setProcessingMessage("⚠ Processing failed");
+        setIntakeError("Text extraction unavailable — you can paste or edit the source text manually.");
+      }
+    } catch (error) {
+      if (currentController.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+        setProcessingState("cancelled");
+        setProcessingMessage("Processing cancelled");
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : "File processing failed.";
+      if (message.includes("too long") || message.includes("timed out") || message.includes("taking too long")) {
+        setProcessingState("timeout");
+        setProcessingMessage("OCR processing is taking too long.");
+        setIntakeError("OCR processing is taking too long. Retry OCR or use manual text.");
+      } else {
+        setProcessingState("error");
+        setProcessingMessage("⚠ Processing failed");
+        setIntakeError(message || "OCR could not be completed. Text extraction unavailable — you can paste or edit the source text manually.");
       }
     } finally {
+      if (activeProcessingRef.current?.id === processingId) {
+        activeProcessingRef.current = null;
+      }
       setIsExtracting(false);
     }
   }
 
   function clearAll() {
+    cancelActiveProcessing();
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (uploadAnotherInputRef.current) uploadAnotherInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
     setFiles([]);
     void clearTeachingEngineFiles();
     setOcrText("");
@@ -823,6 +1052,7 @@ function RouteComponent() {
     setExtractedItems([]);
     setPrompt("");
     setCopied(false);
+    setProcessingState("idle");
     setIntakeError(null);
     setBuildStatus(null);
     setBuildStages([]);
@@ -1105,14 +1335,70 @@ function RouteComponent() {
           {isExtracting && (
             <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground">
               <Loader2 size={14} className="animate-spin" />
-              Processing files locally (OCR/PDF text extraction)...
+              {processingMessage}
+            </div>
+          )}
+
+          {processingState === "success" && !isExtracting && (
+            <div className="mt-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+              ✓ Processing complete. OCR extraction completed successfully.
+            </div>
+          )}
+
+          {processingState === "timeout" && !isExtracting && (
+            <div className="mt-3 space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              <div>OCR processing is taking too long.</div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProcessingState("idle");
+                    setIntakeError(null);
+                    fileInputRef.current?.click();
+                  }}
+                  className="rounded-xl border border-border bg-card/70 px-3 py-2 text-xs font-semibold text-foreground"
+                >
+                  Retry OCR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProcessingState("idle");
+                    setIntakeError("Text extraction unavailable — you can paste or edit the source text manually.");
+                  }}
+                  className="rounded-xl border border-border bg-card/70 px-3 py-2 text-xs font-semibold text-foreground"
+                >
+                  Use Manual Text
+                </button>
+              </div>
+            </div>
+          )}
+
+          {processingState === "cancelled" && !isExtracting && (
+            <div className="mt-3 rounded-xl border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground">
+              Previous processing was cancelled because a newer file replaced it.
             </div>
           )}
 
           {intakeError && (
-            <p className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-              {intakeError}
-            </p>
+            <div className="mt-3 space-y-2">
+              <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                {intakeError}
+              </p>
+              {(processingState === "timeout" || processingState === "error" || processingState === "cancelled") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProcessingState("idle");
+                    setIntakeError(null);
+                    fileInputRef.current?.click();
+                  }}
+                  className="rounded-xl border border-border bg-card/70 px-3 py-2 text-xs font-semibold text-foreground"
+                >
+                  TRY AGAIN
+                </button>
+              )}
+            </div>
           )}
         </section>
 
@@ -1194,12 +1480,56 @@ function RouteComponent() {
             Detected subject: {detectedSubject || "Not identified"}. Showing relevant options only.
           </div>
 
-          <div className="relative rounded-2xl border border-border bg-background/45">
-            <div className="max-h-[24rem] overflow-y-auto p-3 pb-24">
-              <div className="grid gap-3 sm:grid-cols-2">
-                {relevantOutputOptions.map((option) => {
+          <div className="mb-3 rounded-2xl border border-border bg-background/60 p-3">
+            <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Primary Output</div>
+            <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-3 py-3">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-primary bg-primary text-xs font-bold text-primary-foreground">
+                01
+              </span>
+              <span className="text-sm font-semibold text-foreground">Normal Solution</span>
+            </div>
+          </div>
+
+          <form
+            className="mb-3 rounded-2xl border border-border bg-background/60 p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              applyQuickNumberSelection(quickNumberInput);
+            }}
+          >
+            <label className="mb-2 block text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              Enter option numbers
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                value={quickNumberInput}
+                onChange={(event) => setQuickNumberInput(event.target.value)}
+                placeholder="Example: 1,5,8,10"
+                inputMode="numeric"
+                autoComplete="off"
+                aria-label="Enter option numbers"
+                className="w-full rounded-xl border border-border bg-card/70 px-3 py-3 text-sm text-foreground outline-none"
+              />
+              <button
+                type="submit"
+                className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-semibold text-foreground"
+              >
+                Select
+              </button>
+            </div>
+          </form>
+
+          <div className="rounded-2xl border border-border bg-background/45 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              <span>Deep learning functions</span>
+              <span>
+                {selectedOutputOptions.filter((item) => item !== "Normal Solution").length}/{relevantOutputOptions.length}
+              </span>
+            </div>
+            <div className="max-h-[22rem] overflow-y-auto pr-1">
+              <div className="space-y-2">
+                {numberedRelevantOutputOptions.map(({ index, option, label }) => {
                   const selected = selectedOutputOptions.includes(option);
-                  const locked = option === "Normal Solution";
 
                   return (
                     <button
@@ -1207,17 +1537,26 @@ function RouteComponent() {
                       type="button"
                       role="checkbox"
                       aria-checked={selected}
-                      aria-label={option}
-                      disabled={locked}
+                      aria-label={label}
                       onClick={() => toggleOutputOption(option)}
-                      className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+                      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${
                         selected
                           ? "border-primary/60 bg-primary/10 text-foreground"
-                          : "border-border bg-card/50 text-foreground"
-                      } ${locked ? "cursor-not-allowed" : "hover:border-primary/40"}`}
+                          : "border-border bg-card/50 text-foreground hover:border-primary/40"
+                      }`}
                     >
                       <span
-                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-sm font-semibold ${
+                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-xs font-bold ${
+                          selected
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background text-muted-foreground"
+                        }`}
+                      >
+                        {String(index).padStart(2, "0")}
+                      </span>
+                      <span className="flex-1 text-sm font-semibold leading-5">{OUTPUT_OPTION_LABELS[option]}</span>
+                      <span
+                        className={`inline-flex h-5 w-5 items-center justify-center rounded-md border text-[10px] font-bold ${
                           selected
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-border bg-background text-transparent"
@@ -1225,40 +1564,37 @@ function RouteComponent() {
                       >
                         ✓
                       </span>
-                      <span className="text-base font-semibold leading-6">{OUTPUT_OPTION_LABELS[option]}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
+          </div>
 
-            <div className="absolute inset-x-0 bottom-0 border-t border-border bg-card/95 p-3 backdrop-blur">
-              <div className="grid gap-2 sm:grid-cols-3">
-                <button
-                  type="button"
-                  onClick={selectAllOutputOptions}
-                  className="rounded-xl border border-border bg-background/70 px-3 py-3 text-sm font-semibold text-foreground"
-                >
-                  Select All
-                </button>
-                <button
-                  type="button"
-                  onClick={clearOutputOptions}
-                  className="rounded-xl border border-border bg-background/70 px-3 py-3 text-sm font-semibold text-foreground"
-                >
-                  Clear All
-                </button>
-                <button
-                  type="button"
-                  onClick={buildPrompt}
-                  disabled={isBuildingPrompt}
-                  className="rounded-xl px-3 py-3 text-sm font-semibold text-primary-foreground"
-                  style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
-                >
-                  {isBuildingPrompt ? "Generating..." : "Generate Prompt"}
-                </button>
-              </div>
-            </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={selectAllOutputOptions}
+              className="rounded-xl border border-border bg-background/70 px-3 py-3 text-sm font-semibold text-foreground"
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              onClick={clearOutputOptions}
+              className="rounded-xl border border-border bg-background/70 px-3 py-3 text-sm font-semibold text-foreground"
+            >
+              Clear All
+            </button>
+            <button
+              type="button"
+              onClick={buildPrompt}
+              disabled={isBuildingPrompt}
+              className="rounded-xl px-3 py-3 text-sm font-semibold text-primary-foreground"
+              style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
+            >
+              {isBuildingPrompt ? "Generating..." : "Generate Prompt"}
+            </button>
           </div>
         </section>
 
@@ -1442,6 +1778,8 @@ function RouteComponent() {
           sendStatus={sendStatus}
           summary={promptSummary}
         />
+
+        <MasterImageWorkflow extracted={extracted} prompt={prompt} />
       </div>
     </AppShell>
   );

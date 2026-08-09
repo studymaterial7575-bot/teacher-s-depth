@@ -84,19 +84,21 @@ export const OUTPUT_OPTIONS = [
   "Formula Breakdown",
   "Logical Flow",
   "Visual Explanation",
+  "Dissected Visual",
   "Real-life Analogy",
   "Exam Importance",
   "Common Mistakes",
-  "Predicted Doubts",
-  "Classroom Teaching Script",
-  "Blackboard Writing",
-  "Homework",
+  "Memory Tricks",
   "Practice Questions",
   "Revision Notes",
   "Word Meanings",
   "Grammar Explanation",
+  "Usage",
+  "Examples",
+  "Common Errors",
   "Timeline",
   "Map Explanation",
+  "Cause and Effect",
   "Flowchart",
   "Mind Map",
   "Infographic",
@@ -147,4 +149,60 @@ export type PromptBuilderInput = {
   visualStyle: VisualStyleOption;
   explanationStyle: ExplanationStyleOption;
   objective: string;
+};
+
+export type TeachingImageDefinition = {
+  title: string;
+  text: string;
+};
+
+export type TeachingImageFormula = {
+  formula: string;
+  meaning: string;
+  units: string;
+};
+
+export type TeachingImageWorkedExample = {
+  title: string;
+  problem: string;
+  steps: string;
+};
+
+export type TeachingImageDiagram = {
+  title: string;
+  description: string;
+};
+
+export type TeachingImageTable = {
+  title: string;
+  description: string;
+};
+
+export type TeachingCard = {
+  title: string;
+  explanation: string;
+  keyPoints: string[];
+  formula?: string;
+  diagram?: string;
+  example?: string;
+  examImportance?: string;
+  commonMistake?: string;
+};
+
+export type TeachingImageAnalysisResult = {
+  mainTopic: string;
+  subtopics: string[];
+  sourceContent: string[];
+  additionalExamCoverage: string[];
+  definitions: TeachingImageDefinition[];
+  formulae: TeachingImageFormula[];
+  workedExamples: TeachingImageWorkedExample[];
+  diagrams: TeachingImageDiagram[];
+  tables: TeachingImageTable[];
+  importantFacts: string[];
+  examPoints: string[];
+  commonQuestionTypes: string[];
+  commonMistakes: string[];
+  revisionPoints: string[];
+  cards: TeachingCard[];
 };

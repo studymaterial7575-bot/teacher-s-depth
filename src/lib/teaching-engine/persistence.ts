@@ -4,6 +4,7 @@ const DB_NAME = "teacher-depth";
 const DB_VERSION = 1;
 const STORE_NAME = "teaching-engine-files";
 const STORE_KEY = "attached-files";
+const MASTER_IMAGE_KEY = "master-teaching-image";
 
 type StoredTeachingEngineFile = {
   name: string;
@@ -117,6 +118,57 @@ export async function clearTeachingEngineFiles() {
     await transactionToPromise(transaction);
   } catch {
     // Ignore persistence failures so clearing still succeeds in the UI.
+  } finally {
+    database.close();
+  }
+}
+
+export async function loadMasterTeachingImage() {
+  if (!isBrowser) return null as File | null;
+
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    const store = transaction.objectStore(STORE_NAME);
+    const result = await requestToPromise<File | StoredTeachingEngineFile | undefined>(store.get(MASTER_IMAGE_KEY));
+    await transactionToPromise(transaction);
+
+    if (!result) return null;
+    return toFile(result);
+  } catch {
+    return null;
+  } finally {
+    database.close();
+  }
+}
+
+export async function saveMasterTeachingImage(file: File) {
+  if (!isBrowser) return;
+
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    store.put(toStoredFile(file), MASTER_IMAGE_KEY);
+    await transactionToPromise(transaction);
+  } catch {
+    // Ignore persistence failures so image workflow remains usable.
+  } finally {
+    database.close();
+  }
+}
+
+export async function clearMasterTeachingImage() {
+  if (!isBrowser) return;
+
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    store.delete(MASTER_IMAGE_KEY);
+    await transactionToPromise(transaction);
+  } catch {
+    // Ignore persistence failures.
   } finally {
     database.close();
   }

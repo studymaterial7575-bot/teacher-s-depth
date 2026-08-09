@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Bookmark, Compass, Home, Search, Sparkles, Timer } from "lucide-react";
+import { Bookmark, Home, Search, Sparkles } from "lucide-react";
 import { useState, type ReactNode, type ComponentType, type SVGProps } from "react";
 
 export function AppShell({
@@ -51,9 +51,6 @@ export function AppShell({
             <Link to="/bookmarks" className="rounded-full p-2 text-muted-foreground hover:text-foreground" aria-label="Bookmarks">
               <Bookmark size={18} />
             </Link>
-            <Link to="/tools" className="rounded-full p-2 text-muted-foreground hover:text-foreground" aria-label="Tools">
-              <Timer size={18} />
-            </Link>
           </div>
         </div>
 
@@ -81,23 +78,13 @@ export function AppShell({
 
       <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-4">{children}</main>
 
-      {/* Floating action button — positioned above bottom nav on mobile */}
-      <Link
-        to="/tools"
-        className="fixed bottom-[4.5rem] right-4 z-40 flex items-center gap-2 rounded-full px-3 py-2.5 text-xs font-semibold text-primary-foreground shadow-[var(--shadow-elegant)] transition hover:scale-105 md:bottom-5 md:right-5 md:px-4 md:py-3 md:text-sm"
-        style={{ background: "var(--gradient-primary)" }}
-      >
-        <Compass size={16} /> Study Tools
-      </Link>
-
       {/* Bottom nav with safe-area padding */}
       <nav
         className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/80 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl md:hidden"
       >
-        <div className="mx-auto grid max-w-3xl grid-cols-4 px-4">
+        <div className="mx-auto grid max-w-3xl grid-cols-3 px-4">
           <NavItem to="/" icon={Home} label="Home" />
           <NavItem to="/bookmarks" icon={Bookmark} label="Saved" />
-          <NavItem to="/tools" icon={Timer} label="Tools" />
           <NavItem to="/companion" icon={Sparkles} label="AI" />
         </div>
       </nav>
