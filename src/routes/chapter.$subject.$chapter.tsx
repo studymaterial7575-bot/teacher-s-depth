@@ -113,14 +113,14 @@ function ChapterPage() {
               href: `/chapter/${chapter.subject}/${chapter.id}`,
             })
           }
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-foreground/80 hover:text-foreground"
+          className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-foreground/80 hover:text-foreground"
         >
           {isBookmarked(chapterBmId) ? <BookmarkCheck size={12} className="text-primary" /> : <Bookmark size={12} />}
           {isBookmarked(chapterBmId) ? "Bookmarked" : "Bookmark"}
         </button>
         <button
           onClick={toggleComplete}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
+          className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
             isCompleted ? "border-primary/40 bg-primary/15 text-primary" : "border-border bg-card/60 text-foreground/80"
           }`}
         >
@@ -139,7 +139,7 @@ function ChapterPage() {
               key={t}
               onClick={() => setActive(i)}
               className={
-                "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition " +
+                "shrink-0 rounded-full px-3.5 py-2 text-xs font-medium transition " +
                 (i === active
                   ? "bg-primary text-primary-foreground shadow-[var(--shadow-elegant)]"
                   : "border border-border bg-card/60 text-muted-foreground hover:text-foreground")

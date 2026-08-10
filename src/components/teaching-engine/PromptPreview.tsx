@@ -133,7 +133,7 @@ export function PromptPreview({
               Prompt Preview (first 20 lines)
             </AccordionTrigger>
             <AccordionContent>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-card/50 px-3 py-3 text-xs text-foreground">
+              <pre className="whitespace-pre-wrap rounded-xl border border-border bg-card/50 px-3 py-3 text-xs text-foreground">
                 {previewLines}
               </pre>
             </AccordionContent>
@@ -142,11 +142,9 @@ export function PromptPreview({
       )}
 
       {hasPrompt && showFullPrompt && (
-        <textarea
-          readOnly
-          value={prompt}
-          className="mt-4 h-72 w-full overflow-y-auto rounded-2xl border border-border bg-background/60 px-3 py-3 text-sm text-foreground outline-none"
-        />
+        <pre className="mt-4 whitespace-pre-wrap rounded-2xl border border-border bg-background/60 px-3 py-3 text-sm text-foreground">
+          {prompt}
+        </pre>
       )}
 
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">

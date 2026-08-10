@@ -39,7 +39,7 @@ function SubjectPage() {
               to="/subjects/$slug"
               params={{ slug: s.key }}
               className={
-                "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition " +
+                "shrink-0 rounded-full px-3.5 py-2 text-xs font-medium transition " +
                 (s.key === subject.key
                   ? "bg-primary text-primary-foreground shadow-[var(--shadow-elegant)]"
                   : "border border-border bg-card/60 text-muted-foreground hover:text-foreground")
@@ -67,7 +67,7 @@ function SubjectPage() {
               key={c.id}
               to="/chapter/$subject/$chapter"
               params={{ subject: c.subject, chapter: c.id }}
-              className="flex items-start gap-3 rounded-2xl border border-border bg-card/60 p-4 backdrop-blur transition hover:border-primary/50"
+                className="flex min-h-16 items-start gap-3 rounded-2xl border border-border bg-card/60 p-4 backdrop-blur transition hover:border-primary/50"
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-bold text-foreground">{c.title}</div>

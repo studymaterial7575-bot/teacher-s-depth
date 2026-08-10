@@ -73,7 +73,7 @@ function CompanionPage() {
                     key={s}
                     onClick={() => setSubject(s)}
                     className={
-                      "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition " +
+                      "shrink-0 rounded-full px-3.5 py-2 text-xs font-medium transition " +
                       (subject === s
                         ? "bg-primary text-primary-foreground shadow-[var(--shadow-elegant)]"
                         : "border border-border bg-card text-muted-foreground hover:text-foreground")
@@ -121,7 +121,7 @@ function CompanionPage() {
               {files.map((f, i) => (
                 <li key={i} className="flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-xs">
                   <span className="truncate text-foreground">{f.name}</span>
-                  <button onClick={() => setFiles((p) => p.filter((_, idx) => idx !== i))} className="ml-3 shrink-0 text-muted-foreground hover:text-destructive">Remove</button>
+                  <button onClick={() => setFiles((p) => p.filter((_, idx) => idx !== i))} className="ml-3 inline-flex min-h-9 shrink-0 items-center rounded-lg px-2 text-muted-foreground hover:text-destructive">Remove</button>
                 </li>
               ))}
             </ul>
@@ -140,7 +140,7 @@ function CompanionPage() {
           <button
             onClick={analyze}
             disabled={loading || (files.length === 0 && !text.trim())}
-            className="w-full rounded-2xl py-3.5 text-sm font-semibold text-primary-foreground transition disabled:opacity-40"
+            className="w-full min-h-11 rounded-2xl py-3.5 text-sm font-semibold text-primary-foreground transition disabled:opacity-40"
             style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
           >
             {loading ? "Analyzing…" : "Get Depth Analysis"}
@@ -154,7 +154,7 @@ function CompanionPage() {
 
       {result && (
         <>
-          <button onClick={() => { setResult(null); setFiles([]); setText(""); }} className="mb-3 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs text-secondary-foreground hover:bg-secondary/80">
+          <button onClick={() => { setResult(null); setFiles([]); setText(""); }} className="mb-3 min-h-9 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs text-secondary-foreground hover:bg-secondary/80">
             New analysis
           </button>
           <ResultTabs result={result} />

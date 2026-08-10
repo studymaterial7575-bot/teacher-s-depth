@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
-import useEmblaCarousel from "embla-carousel-react";
+import { useRef, useState } from "react";
 import { TABS, type AnalysisResult } from "./types";
 import { DiagramCard } from "./DiagramCard";
 import { ImportanceBadge } from "./ImportanceBadge";
 
 function Block({ children }: { children: React.ReactNode }) {
-  return <div className="space-y-4 pb-24 pt-2">{children}</div>;
+  return <div className="space-y-4 pt-2">{children}</div>;
 }
 
 function Prose({ text }: { text: string }) {
@@ -17,20 +16,13 @@ function Prose({ text }: { text: string }) {
 }
 
 export function ResultTabs({ result }: { result: AnalysisResult }) {
-  const [emblaRef, embla] = useEmblaCarousel({ loop: false, align: "start" });
   const [active, setActive] = useState(0);
+  const sectionRefs = useRef<Array<HTMLElement | null>>([]);
 
-  useEffect(() => {
-    if (!embla) return;
-    const onSelect = () => setActive(embla.selectedScrollSnap());
-    embla.on("select", onSelect);
-    onSelect();
-    return () => {
-      embla.off("select", onSelect);
-    };
-  }, [embla]);
-
-  const go = (i: number) => embla?.scrollTo(i);
+  const go = (i: number) => {
+    setActive(i);
+    sectionRefs.current[i]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="flex flex-col">
@@ -50,7 +42,7 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
               key={t}
               onClick={() => go(i)}
               className={
-                "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition " +
+                "shrink-0 rounded-full px-3.5 py-2 text-xs font-medium transition " +
                 (i === active
                   ? "bg-primary text-primary-foreground shadow-[var(--shadow-elegant)]"
                   : "border border-border bg-secondary/60 text-muted-foreground hover:text-foreground")
@@ -62,125 +54,123 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
         </div>
       </div>
 
-      <div className="overflow-hidden" ref={emblaRef}>
-        <div className="flex">
-          {/* 1. Solution */}
-          <div className="min-w-0 flex-[0_0_100%] pr-2">
-            <Block>
-              <Prose text={result.solution || "—"} />
-            </Block>
-          </div>
+      <div className="space-y-6">
+        <section ref={(node) => { sectionRefs.current[0] = node; }} className="scroll-mt-32">
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">1. Solution</div>
+          <Block>
+            <Prose text={result.solution || "—"} />
+          </Block>
+        </section>
 
-          {/* 2. Visual Diagrams */}
-          <div className="min-w-0 flex-[0_0_100%] px-1">
-            <Block>
-              {result.diagrams?.length ? (
-                result.diagrams.map((d, i) => <DiagramCard key={i} d={d} />)
-              ) : (
-                <Prose text="No diagrams returned." />
-              )}
-            </Block>
-          </div>
+        <section ref={(node) => { sectionRefs.current[1] = node; }} className="scroll-mt-32">
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">2. Visual Diagrams</div>
+          <Block>
+            {result.diagrams?.length ? (
+              result.diagrams.map((d, i) => <DiagramCard key={i} d={d} />)
+            ) : (
+              <Prose text="No diagrams returned." />
+            )}
+          </Block>
+        </section>
 
-          {/* 3. Simple Examples */}
-          <div className="min-w-0 flex-[0_0_100%] px-1">
-            <Block>
-              {result.simpleExamples?.map((e, i) => (
-                <div
-                  key={i}
-                  className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]"
-                >
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                      Example {i + 1}
-                    </span>
-                    <span className="text-sm font-semibold text-foreground">{e.title}</span>
+        <section ref={(node) => { sectionRefs.current[2] = node; }} className="scroll-mt-32">
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">3. Simple Examples</div>
+          <Block>
+            {result.simpleExamples?.map((e, i) => (
+              <div
+                key={i}
+                className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]"
+              >
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                    Example {i + 1}
+                  </span>
+                  <span className="text-sm font-semibold text-foreground">{e.title}</span>
+                </div>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Q. </span>
+                  {e.problem}
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{e.steps}</p>
+              </div>
+            ))}
+          </Block>
+        </section>
+
+        <section ref={(node) => { sectionRefs.current[3] = node; }} className="scroll-mt-32">
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">4. Why</div>
+          <Block>
+            <Prose text={result.why || "—"} />
+          </Block>
+        </section>
+
+        <section ref={(node) => { sectionRefs.current[4] = node; }} className="scroll-mt-32">
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">5. Common Doubts</div>
+          <Block>
+            {result.doubts?.map((d, i) => (
+              <div
+                key={i}
+                className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]"
+              >
+                <p className="text-sm font-semibold text-accent">Q. {d.q}</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{d.a}</p>
+              </div>
+            ))}
+          </Block>
+        </section>
+
+        <section ref={(node) => { sectionRefs.current[5] = node; }} className="scroll-mt-32">
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">6. Similar Examples</div>
+          <Block>
+            {(["easy", "moderate", "board"] as const).map((level) => (
+              <div key={level} className="space-y-2">
+                <div className="px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+                  {level === "board" ? "Board Level" : level}
+                </div>
+                {result.similarExamples?.[level]?.map((q, i) => (
+                  <div
+                    key={i}
+                    className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]"
+                  >
+                    <p className="text-sm font-medium text-foreground">{q.q}</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
+                      {q.a}
+                    </p>
                   </div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                    <span className="font-medium text-foreground">Q. </span>
-                    {e.problem}
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{e.steps}</p>
-                </div>
-              ))}
-            </Block>
-          </div>
+                ))}
+              </div>
+            ))}
+          </Block>
+        </section>
 
-          {/* 4. WHY */}
-          <div className="min-w-0 flex-[0_0_100%] px-1">
-            <Block>
-              <Prose text={result.why || "—"} />
-            </Block>
-          </div>
-
-          {/* 5. Common Doubts */}
-          <div className="min-w-0 flex-[0_0_100%] px-1">
-            <Block>
-              {result.doubts?.map((d, i) => (
-                <div
-                  key={i}
-                  className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]"
-                >
-                  <p className="text-sm font-semibold text-accent">Q. {d.q}</p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{d.a}</p>
-                </div>
-              ))}
-            </Block>
-          </div>
-
-          {/* 6. Similar Examples */}
-          <div className="min-w-0 flex-[0_0_100%] px-1">
-            <Block>
-              {(["easy", "moderate", "board"] as const).map((level) => (
-                <div key={level} className="space-y-2">
-                  <div className="px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
-                    {level === "board" ? "Board Level" : level}
+        <section ref={(node) => { sectionRefs.current[6] = node; }} className="scroll-mt-32">
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">7. Videos</div>
+          <Block>
+            {result.videos?.map((v, i) => (
+              <a
+                key={i}
+                href={`https://www.youtube.com/results?search_query=${encodeURIComponent(v.query)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-2xl border border-border bg-card p-4 transition hover:border-primary/60 hover:bg-secondary/70"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/90 text-destructive-foreground">
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
                   </div>
-                  {result.similarExamples?.[level]?.map((q, i) => (
-                    <div
-                      key={i}
-                      className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]"
-                    >
-                      <p className="text-sm font-medium text-foreground">{q.q}</p>
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                        {q.a}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </Block>
-          </div>
-
-          {/* 7. Videos */}
-          <div className="min-w-0 flex-[0_0_100%] pl-2">
-            <Block>
-              {result.videos?.map((v, i) => (
-                <a
-                  key={i}
-                  href={`https://www.youtube.com/results?search_query=${encodeURIComponent(v.query)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-2xl border border-border bg-card p-4 transition hover:border-primary/60 hover:bg-secondary/70"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/90 text-destructive-foreground">
-                      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-foreground">{v.title}</div>
-                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                        Search: {v.query}
-                      </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-foreground">{v.title}</div>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                      Search: {v.query}
                     </div>
                   </div>
-                </a>
-              ))}
-            </Block>
-          </div>
-        </div>
+                </div>
+              </a>
+            ))}
+          </Block>
+        </section>
       </div>
     </div>
   );

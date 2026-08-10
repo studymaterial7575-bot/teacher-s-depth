@@ -15,7 +15,7 @@ export function AppShell({
   const [q, setQ] = useState("");
 
   return (
-    <div className="relative min-h-screen bg-background">
+    <div className="relative min-h-[100dvh] bg-background">
       {/* Ambient gradient backdrop */}
       <div
         aria-hidden
@@ -31,7 +31,7 @@ export function AppShell({
           {back ? (
             <a
               href={back.to}
-              className="rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+              className="inline-flex min-h-10 items-center rounded-full border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
             >
               ← {back.label ?? "Back"}
             </a>
@@ -48,7 +48,7 @@ export function AppShell({
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            <Link to="/bookmarks" className="rounded-full p-2 text-muted-foreground hover:text-foreground" aria-label="Bookmarks">
+            <Link to="/bookmarks" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-full p-2 text-muted-foreground hover:text-foreground" aria-label="Bookmarks">
               <Bookmark size={18} />
             </Link>
           </div>
@@ -102,12 +102,12 @@ function NavItem({
   label: string;
 }) {
   return (
-    <a
-      href={to}
-      className="flex flex-col items-center gap-1 py-2 text-[11px] text-muted-foreground hover:text-foreground"
+    <Link
+      to={to as any}
+      className="flex min-h-12 flex-col items-center justify-center gap-1 px-2 py-2 text-xs text-muted-foreground hover:text-foreground"
     >
       <Icon size={18} />
       {label}
-    </a>
+    </Link>
   );
 }

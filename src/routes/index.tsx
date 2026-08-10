@@ -217,9 +217,9 @@ function StartTile({
   tone: string;
 }) {
   return (
-    <a
-      href={href}
-      className="group relative overflow-hidden rounded-3xl border border-border bg-card/70 p-4 backdrop-blur transition hover:border-primary/60"
+    <Link
+      to={href as any}
+      className="group relative block min-h-36 overflow-hidden rounded-3xl border border-border bg-card/70 p-4 backdrop-blur transition hover:border-primary/60"
     >
       <div aria-hidden className={`absolute inset-0 -z-10 bg-gradient-to-br ${tone} opacity-80`} />
       <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-background/60 text-foreground shadow-sm">
@@ -227,13 +227,13 @@ function StartTile({
       </div>
       <div className="mt-3 text-base font-bold text-foreground">{label}</div>
       <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
-    </a>
+    </Link>
   );
 }
 
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="mb-3 flex items-end justify-between">
+    <div className="mb-3 flex flex-wrap items-end justify-between gap-1.5">
       <h2 className="text-sm font-bold uppercase tracking-[0.18em] text-foreground">{title}</h2>
       {subtitle && <span className="text-[11px] text-muted-foreground">{subtitle}</span>}
     </div>
@@ -252,13 +252,13 @@ function QuickTile({
   tone: string;
 }) {
   return (
-    <a
-      href={href}
-      className="group relative overflow-hidden rounded-2xl border border-border bg-card/70 p-3 backdrop-blur transition hover:border-primary/60"
+    <Link
+      to={href as any}
+      className="group relative block min-h-24 overflow-hidden rounded-2xl border border-border bg-card/70 p-3 backdrop-blur transition hover:border-primary/60"
     >
       <div aria-hidden className={`absolute inset-0 -z-10 bg-gradient-to-br ${tone} opacity-80`} />
       <Icon size={18} className="text-foreground/90" />
       <div className="mt-2 text-sm font-semibold text-foreground">{label}</div>
-    </a>
+    </Link>
   );
 }

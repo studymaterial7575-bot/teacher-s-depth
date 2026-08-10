@@ -33,7 +33,7 @@ function ToolsPage() {
               key={t.id}
               onClick={() => setActive(t.id)}
               className={
-                "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition " +
+                "shrink-0 rounded-full px-3.5 py-2 text-xs font-medium transition " +
                 (active === t.id
                   ? "bg-primary text-primary-foreground"
                   : "border border-border bg-card/60 text-muted-foreground hover:text-foreground")
@@ -95,7 +95,7 @@ function Calculator({ scientific }: { scientific: boolean }) {
             <button
               key={s}
               onClick={() => setExpr((e) => e + s)}
-              className="rounded-xl border border-border bg-card/60 px-2 py-2 text-xs font-mono text-foreground hover:border-primary/50"
+              className="rounded-xl border border-border bg-card/60 px-2 py-2.5 text-xs font-mono text-foreground hover:border-primary/50"
             >
               {s.replace("Math.", "")}
             </button>
@@ -107,26 +107,26 @@ function Calculator({ scientific }: { scientific: boolean }) {
           <button
             key={b}
             onClick={() => setExpr((e) => e + b)}
-            className="rounded-xl bg-secondary px-3 py-3 text-base font-semibold text-foreground hover:bg-secondary/70"
+            className="rounded-xl bg-secondary px-3 py-3.5 text-base font-semibold text-foreground hover:bg-secondary/70"
           >
             {b}
           </button>
         ))}
         <button
           onClick={() => setExpr("")}
-          className="col-span-2 rounded-xl bg-destructive/80 py-3 text-sm font-semibold text-destructive-foreground"
+          className="col-span-2 rounded-xl bg-destructive/80 py-3.5 text-sm font-semibold text-destructive-foreground"
         >
           Clear
         </button>
         <button
           onClick={() => setExpr((e) => e + "+")}
-          className="rounded-xl bg-secondary py-3 text-base font-semibold text-foreground"
+          className="rounded-xl bg-secondary py-3.5 text-base font-semibold text-foreground"
         >
           +
         </button>
         <button
           onClick={() => setExpr(result)}
-          className="rounded-xl py-3 text-base font-bold text-primary-foreground"
+          className="rounded-xl py-3.5 text-base font-bold text-primary-foreground"
           style={{ background: "var(--gradient-primary)" }}
         >
           =
@@ -183,7 +183,7 @@ function UnitConverter() {
               setTo(UNITS[c][1]?.name ?? UNITS[c][0].name);
             }}
             className={
-              "rounded-full px-3 py-1 text-xs " +
+              "rounded-full px-3 py-1.5 text-xs " +
               (category === c ? "bg-primary text-primary-foreground" : "border border-border bg-card/60 text-muted-foreground")
             }
           >
@@ -282,10 +282,10 @@ function Pomodoro() {
       </div>
       <div className="my-6 font-mono text-6xl font-black text-foreground tracking-tight">{mm}:{ss}</div>
       <div className="flex justify-center gap-2">
-        <button onClick={() => setRunning((r) => !r)} className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
+        <button onClick={() => setRunning((r) => !r)} className="inline-flex min-h-10 items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
           {running ? <><Pause size={14} /> Pause</> : <><Play size={14} /> Start</>}
         </button>
-        <button onClick={() => { setRunning(false); setSeconds(mode === "work" ? 25 * 60 : 5 * 60); }} className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-5 py-2 text-sm text-foreground">
+        <button onClick={() => { setRunning(false); setSeconds(mode === "work" ? 25 * 60 : 5 * 60); }} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-border bg-card/60 px-5 py-2 text-sm text-foreground">
           <RotateCcw size={14} /> Reset
         </button>
       </div>
@@ -309,10 +309,10 @@ function Stopwatch() {
         {String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}.<span className="text-3xl text-muted-foreground">{String(cs).padStart(2, "0")}</span>
       </div>
       <div className="flex justify-center gap-2">
-        <button onClick={() => setRunning((r) => !r)} className="rounded-full px-5 py-2 text-sm font-semibold text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
+        <button onClick={() => setRunning((r) => !r)} className="min-h-10 rounded-full px-5 py-2 text-sm font-semibold text-primary-foreground" style={{ background: "var(--gradient-primary)" }}>
           {running ? "Pause" : "Start"}
         </button>
-        <button onClick={() => { setMs(0); setRunning(false); }} className="rounded-full border border-border bg-card/60 px-5 py-2 text-sm text-foreground">Reset</button>
+        <button onClick={() => { setMs(0); setRunning(false); }} className="min-h-10 rounded-full border border-border bg-card/60 px-5 py-2 text-sm text-foreground">Reset</button>
       </div>
     </div>
   );

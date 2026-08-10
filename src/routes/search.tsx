@@ -26,12 +26,10 @@ function SearchPage() {
 
   const results = useMemo(() => {
     const needle = q.trim();
-    return {
-      indexed: needle ? searchEducationContent(needle) : [],
-    };
+    return needle ? searchEducationContent(needle) : [];
   }, [q]);
 
-  const hasNoResults = Boolean(q.trim()) && results.indexed.length === 0;
+  const hasNoResults = Boolean(q.trim()) && results.length === 0;
 
   return (
     <AppShell back={{ to: "/" }} title="Search everything">
@@ -48,14 +46,14 @@ function SearchPage() {
 
       {!q.trim() && (
         <p className="text-sm text-muted-foreground">
-          Search actual educational content such as Electricity, Quadratic Formula, Ohm's Law, Grammar, Map Work, Hindi, Marathi, or Computer.
+          Search real educational content from subjects, chapters, topics, formulas, examples, and notes.
         </p>
       )}
 
       <div className="space-y-6">
-        {results.indexed.length > 0 && (
+        {results.length > 0 && (
           <ResultGroup label="Matching educational content">
-            {results.indexed.map((item) => (
+            {results.map((item) => (
               <a
                 key={item.id}
                 href={item.href}
@@ -67,15 +65,21 @@ function SearchPage() {
                     {item.kind}
                   </span>
                 </div>
-                <div className="mt-1 text-[11px] text-muted-foreground">{item.subtitle}</div>
-                <p className="mt-2 text-sm text-foreground/90">{item.content}</p>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  Subject: {item.subject}
+                </div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground">
+                  Chapter/Topic: {item.chapter}{item.topic ? ` · ${item.topic}` : ""}
+                </div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground">Matching title: {item.title}</div>
+                <p className="mt-2 text-sm text-foreground/90">{item.excerpt}</p>
               </a>
             ))}
           </ResultGroup>
         )}
 
         {hasNoResults && (
-          <p className="text-sm text-muted-foreground">No matching content found in the indexed educational database.</p>
+          <p className="text-sm text-muted-foreground">No matching educational content found.</p>
         )}
       </div>
     </AppShell>

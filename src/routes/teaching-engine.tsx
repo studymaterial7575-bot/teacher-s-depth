@@ -376,9 +376,12 @@ function inferHasExercises(text: string) {
 
 function inferExamImportance(text: string) {
   const lower = normalize(text);
-  if (/\b(board exam|important|5 marks|3 marks|frequently asked)\b/.test(lower)) return "High";
-  if (/\b(exam|test|revision)\b/.test(lower)) return "Medium";
-  return "Not identified";
+  const hasPastPaperCount =
+    /(\bpast\s*papers?\b[^\n.]{0,40}\b\d+\s*(times?|x)\b)|(\b\d+\s*(times?|x)\b[^\n.]{0,40}\bpast\s*papers?\b)/i.test(lower);
+  if (hasPastPaperCount) {
+    return "Past-paper frequency referenced in source text.";
+  }
+  return "Past-paper frequency unavailable.";
 }
 
 function extractFormulae(text: string) {
@@ -643,8 +646,9 @@ async function extractTextWithTesseract(file: File, signal?: AbortSignal): Promi
       throw new Error("OCR worker could not initialize.");
     }
 
+    const initializedWorker = worker;
     const result = await withTimeout(
-      () => worker.recognize(file),
+      () => initializedWorker.recognize(file),
       FILE_PROCESSING_TIMEOUT_MS,
       "OCR processing is taking too long.",
       signal,
@@ -1242,7 +1246,7 @@ function RouteComponent() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
               >
                 <Upload size={16} />
                 Upload Screenshot/PDF
@@ -1250,7 +1254,7 @@ function RouteComponent() {
               <button
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
               >
                 <Camera size={16} />
                 Camera Photo
@@ -1258,7 +1262,7 @@ function RouteComponent() {
               <button
                 type="button"
                 onClick={() => uploadAnotherInputRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
               >
                 <Upload size={16} />
                 Upload Another
@@ -1266,7 +1270,7 @@ function RouteComponent() {
               <button
                 type="button"
                 onClick={clearAll}
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
               >
                 Clear
               </button>
@@ -1310,7 +1314,7 @@ function RouteComponent() {
               {sourceFiles.length > 0 ? (
                 <ul className="space-y-1 text-sm text-foreground">
                   {sourceFiles.map((item) => (
-                    <li key={item}>{item}</li>
+                    <li key={item} className="break-all">{item}</li>
                   ))}
                 </ul>
               ) : (
@@ -1411,7 +1415,7 @@ function RouteComponent() {
             <button
               type="button"
               onClick={runExtraction}
-              className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs text-foreground"
+              className="min-h-9 rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs text-foreground"
             >
               Extract Locally
             </button>
@@ -1523,10 +1527,10 @@ function RouteComponent() {
             <div className="mb-2 flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               <span>Deep learning functions</span>
               <span>
-                {selectedOutputOptions.filter((item) => item !== "Normal Solution").length}/{relevantOutputOptions.length}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-primary bg-primary text-xs font-bold text-primary-foreground"
               </span>
             </div>
-            <div className="max-h-[22rem] overflow-y-auto pr-1">
+            <div className="pr-1">
               <div className="space-y-2">
                 {numberedRelevantOutputOptions.map(({ index, option, label }) => {
                   const selected = selectedOutputOptions.includes(option);
@@ -1556,7 +1560,7 @@ function RouteComponent() {
                       </span>
                       <span className="flex-1 text-sm font-semibold leading-5">{OUTPUT_OPTION_LABELS[option]}</span>
                       <span
-                        className={`inline-flex h-5 w-5 items-center justify-center rounded-md border text-[10px] font-bold ${
+                        className={`inline-flex h-6 w-6 items-center justify-center rounded-md border text-[10px] font-bold ${
                           selected
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-border bg-background text-transparent"

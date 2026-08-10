@@ -1124,7 +1124,7 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
                 </div>
               </div>
 
-              <article className="max-h-[24rem] overflow-y-auto rounded-xl border border-border bg-card/50 p-3 touch-pan-y">
+              <article className="rounded-xl border border-border bg-card/50 p-3">
                 <h4 className="text-base font-semibold text-foreground">{activeCard.title}</h4>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{activeCard.explanation}</p>
 

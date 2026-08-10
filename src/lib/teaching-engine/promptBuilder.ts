@@ -234,7 +234,7 @@ export function getNumberedOutputOptions(options: readonly string[]) {
 
 export function formatExamImportanceEvidence(rawValue: string | undefined): string {
   const value = (rawValue ?? "").trim();
-  if (!value) return "Past-paper frequency unavailable";
+  if (!value) return "Past-paper frequency unavailable.";
 
   const normalized = value.toLowerCase();
   if (normalized.includes("past-paper") || normalized.includes("appeared in past papers") || normalized.includes("exact/near-exact") || normalized.includes("related questions")) {
@@ -242,10 +242,10 @@ export function formatExamImportanceEvidence(rawValue: string | undefined): stri
   }
 
   if (["not identified", "unknown", "high", "medium", "low", "very high", "very low"].includes(normalized)) {
-    return "Past-paper frequency unavailable";
+    return "Past-paper frequency unavailable.";
   }
 
-  return "Past-paper frequency unavailable";
+  return "Past-paper frequency unavailable.";
 }
 
 function buildSinglePrompt(input: PromptBuilderInput) {

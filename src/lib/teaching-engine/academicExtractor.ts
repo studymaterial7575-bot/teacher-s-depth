@@ -395,13 +395,14 @@ function detectHasExercises(text: string) {
 
 function detectExamImportance(text: string) {
   const lower = normalize(text);
-  if (/\b(board exam|final exam|important|very important|frequently asked|5 marks|3 marks|2 marks)\b/.test(lower)) {
-    return "High";
+  const hasPastPaperCount =
+    /(\bpast\s*papers?\b[^\n.]{0,40}\b\d+\s*(times?|x)\b)|(\b\d+\s*(times?|x)\b[^\n.]{0,40}\bpast\s*papers?\b)/i.test(lower);
+
+  if (hasPastPaperCount) {
+    return "Past-paper frequency referenced in source text.";
   }
-  if (/\b(exam|assessment|test|revision)\b/.test(lower)) {
-    return "Medium";
-  }
-  return "Not identified";
+
+  return "Past-paper frequency unavailable.";
 }
 
 function extractFormulae(segment: string) {
