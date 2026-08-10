@@ -654,6 +654,31 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
     a.remove();
   }
 
+  async function runAutomaticDisintegration(source: {
+    file: File;
+    dataUrl: string;
+    origin: "generated" | "imported";
+  }) {
+    const analyzed = await onAnalyzeImage({
+      file: source.file,
+      dataUrl: source.dataUrl,
+      suppressNotice: true,
+    });
+
+    if (!analyzed) {
+      return;
+    }
+
+    const created = await onCreateTeachingCards(analyzed, { suppressNotice: true });
+
+    if (created.length > 0) {
+      const originLabel = source.origin === "generated" ? "Generated" : "Imported";
+      setWorkflowNotice(
+        `${originLabel} master image analyzed and automatically disintegrated into ${created.length} teaching cards.`,
+      );
+    }
+  }
+
   async function onGenerateTeachingImage() {
     if (!imageSpec.trim()) {
       onCreateImageSpec();
@@ -695,7 +720,8 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
       setMasterImageUrl(dataUrl);
       setMasterImageMeta(meta);
       await saveMasterTeachingImage(file);
-      setWorkflowNotice(notice);
+      setWorkflowNotice(`${notice} Running automatic AI understanding and disintegration...`);
+      await runAutomaticDisintegration({ file, dataUrl, origin: "generated" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to generate teaching image.";
       setWorkflowError(message);
@@ -718,7 +744,8 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
       setMasterImageUrl(url);
       setMasterImageMeta(meta);
       await saveMasterTeachingImage(selected);
-      setWorkflowNotice("Master teaching image imported successfully.");
+      setWorkflowNotice("Master teaching image imported successfully. Running automatic AI understanding and disintegration...");
+      await runAutomaticDisintegration({ file: selected, dataUrl: url, origin: "imported" });
     } catch {
       setWorkflowError("Unable to read selected image.");
     } finally {
@@ -737,12 +764,21 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
     await clearMasterTeachingImage();
   }
 
-  async function onAnalyzeImage() {
-    if (!masterImageFile || !masterImageUrl) return;
+  async function onAnalyzeImage(options?: {
+    file?: File;
+    dataUrl?: string;
+    suppressNotice?: boolean;
+  }) {
+    const file = options?.file ?? masterImageFile;
+    const dataUrl = options?.dataUrl ?? masterImageUrl;
+
+    if (!file || !dataUrl) return null;
 
     setIsAnalyzingImage(true);
     setWorkflowError(null);
-    setWorkflowNotice(null);
+    if (!options?.suppressNotice) {
+      setWorkflowNotice(null);
+    }
 
     try {
       const res = await fetch("/api/teaching-image-analyze", {
@@ -754,9 +790,9 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
           topic: extracted.topic,
           teachingResponse,
           file: {
-            name: masterImageFile.name,
-            mime: masterImageFile.type || "image/png",
-            dataUrl: masterImageUrl,
+            name: file.name,
+            mime: file.type || "image/png",
+            dataUrl,
           },
         }),
       });
@@ -766,7 +802,7 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
       }
 
       const payload = (await res.json()) as TeachingImageAnalysisResult;
-      setAnalysis({
+      const nextAnalysis: TeachingImageAnalysisResult = {
         ...EMPTY_ANALYSIS,
         ...payload,
         subtopics: payload.subtopics ?? [],
@@ -783,33 +819,49 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
         commonMistakes: payload.commonMistakes ?? [],
         revisionPoints: payload.revisionPoints ?? [],
         cards: payload.cards ?? [],
-      });
-      setWorkflowNotice("Master image analyzed with AI structural understanding.");
+      };
+      setAnalysis(nextAnalysis);
+      if (!options?.suppressNotice) {
+        setWorkflowNotice("Master image analyzed with AI structural understanding.");
+      }
+      return nextAnalysis;
     } catch (error) {
       const localAnalysis = buildFallbackTeachingImageAnalysis(extracted, teachingResponse || imageSpec || prompt);
       setAnalysis(localAnalysis);
-      setWorkflowNotice("AI analysis unavailable. Applied local structural disintegration from current project context.");
+      if (!options?.suppressNotice) {
+        setWorkflowNotice("AI analysis unavailable. Applied local structural disintegration from current project context.");
+      }
+      return localAnalysis;
     } finally {
       setIsAnalyzingImage(false);
     }
   }
 
-  async function onCreateTeachingCards() {
+  async function onCreateTeachingCards(
+    sourceAnalysis?: TeachingImageAnalysisResult,
+    options?: { suppressNotice?: boolean },
+  ) {
     setIsCreatingCards(true);
     setWorkflowError(null);
-    setWorkflowNotice(null);
+    if (!options?.suppressNotice) {
+      setWorkflowNotice(null);
+    }
 
     try {
-      const merged = ensureMinimumDisintegrationCards(analysis);
+      const merged = ensureMinimumDisintegrationCards(sourceAnalysis ?? analysis);
       if (merged.length === 0) {
         throw new Error("No cards could be derived from this image. Try re-analyzing with a clearer image.");
       }
       setCards(merged);
       setActiveCardIndex(0);
-      setWorkflowNotice(`Created ${merged.length} teaching cards in logical sequence with coverage safeguards.`);
+      if (!options?.suppressNotice) {
+        setWorkflowNotice(`Created ${merged.length} teaching cards in logical sequence with coverage safeguards.`);
+      }
+      return merged;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create cards.";
       setWorkflowError(message);
+      return [];
     } finally {
       setIsCreatingCards(false);
     }
