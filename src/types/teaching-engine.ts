@@ -111,6 +111,12 @@ export type VisualStyleOption = (typeof VISUAL_STYLE_OPTIONS)[number];
 export type ExplanationStyleOption = (typeof EXPLANATION_STYLE_OPTIONS)[number];
 export type OutputOption = (typeof OUTPUT_OPTIONS)[number];
 
+export type FormulaExtraction = {
+  raw: string;
+  normalized: string;
+  confidence: number;
+};
+
 export type ExtractedContent = {
   ocrText: string;
   subject: string;
@@ -118,6 +124,7 @@ export type ExtractedContent = {
   classLevel: string;
   chapter: string;
   topic: string;
+  concept?: string;
   questionType: string;
   questionTypes: string[];
   language: string;
@@ -125,6 +132,7 @@ export type ExtractedContent = {
   hasExercises: boolean;
   examImportance: string;
   formulae: string[];
+  formulaDetails?: FormulaExtraction[];
   numericalQuestions: string[];
   diagrams: string[];
   keywords: string[];
@@ -134,6 +142,7 @@ export type ExtractedContent = {
     classLevel: number;
     chapter: number;
     topic: number;
+    concept?: number;
     questionType: number;
     language: number;
   };

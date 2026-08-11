@@ -18,6 +18,24 @@ import type {
 type MasterImageWorkflowProps = {
   extracted: ExtractedContent;
   prompt: string;
+  sourceExtraction: {
+    sourceFiles: string[];
+    extractedText: string;
+    extractionStage: "ready" | "needs-review" | "unavailable" | "pending";
+    confidenceLabel: "High" | "Medium" | "Low";
+    confidenceNote: string;
+    metadata: {
+      subject: string;
+      classLevel: string;
+      board: string;
+      chapter: string;
+      topic: string;
+      questionType: string;
+      language: string;
+      formulaCount: number;
+      diagramCount: number;
+    };
+  };
 };
 
 type ImageMeta = {
@@ -574,7 +592,7 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowProps) {
+export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: MasterImageWorkflowProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const [teachingResponse, setTeachingResponse] = useLocalStorage(
@@ -789,6 +807,8 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
           chapter: extracted.chapter,
           topic: extracted.topic,
           teachingResponse,
+          sourceExtractedText: sourceExtraction.extractedText,
+          sourceExtractionMetadata: sourceExtraction.metadata,
           file: {
             name: file.name,
             mime: file.type || "image/png",
@@ -933,7 +953,10 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
   const activeCard = hasCards ? cards[activeCardIndex] : null;
 
   const stepStatuses = [
-    { label: "STEP 1 SOURCE MATERIAL -> OCR/SOURCE EXTRACTION", done: extracted.ocrText.trim().length > 0 },
+    {
+      label: "STEP 1 SOURCE MATERIAL -> OCR/SOURCE EXTRACTION",
+      done: sourceExtraction.extractionStage === "ready" || sourceExtraction.extractionStage === "needs-review",
+    },
     { label: "STEP 2 AI TEACHING RESPONSE", done: teachingResponse.trim().length > 0 },
     { label: "STEP 3 CREATE MASTER TEACHING IMAGE", done: !!masterImageUrl },
     { label: "STEP 4 MASTER IMAGE AI UNDERSTANDING", done: hasAnalysis },
@@ -971,7 +994,56 @@ export function MasterImageWorkflow({ extracted, prompt }: MasterImageWorkflowPr
 
       <div className="space-y-4">
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 1 - Teaching Response</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 1 - Source Material and OCR/Source Extraction</div>
+
+          <div className="mb-3 grid gap-2 md:grid-cols-2">
+            <div className="rounded-xl border border-border bg-card/50 p-3 text-xs text-foreground">
+              <div className="mb-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Attached source material</div>
+              {sourceExtraction.sourceFiles.length > 0 ? (
+                <ul className="list-disc space-y-1 pl-5">
+                  {sourceExtraction.sourceFiles.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted-foreground">No source files uploaded yet.</p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-border bg-card/50 p-3 text-xs text-foreground">
+              <div className="mb-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Extracted educational structure</div>
+              <p>Subject: {sourceExtraction.metadata.subject}</p>
+              <p>Class/Grade: {sourceExtraction.metadata.classLevel}</p>
+              <p>Board: {sourceExtraction.metadata.board}</p>
+              <p>Chapter: {sourceExtraction.metadata.chapter}</p>
+              <p>Topic: {sourceExtraction.metadata.topic}</p>
+              <p>Question/Text Type: {sourceExtraction.metadata.questionType}</p>
+              <p>Language: {sourceExtraction.metadata.language}</p>
+              <p>Formula hits: {sourceExtraction.metadata.formulaCount}</p>
+              <p>Diagram/image hints: {sourceExtraction.metadata.diagramCount}</p>
+            </div>
+          </div>
+
+          <div className="mb-3 rounded-xl border border-border bg-card/50 px-3 py-2 text-xs">
+            <span className="font-semibold text-foreground">OCR confidence: {sourceExtraction.confidenceLabel}</span>
+            <p className={sourceExtraction.extractionStage === "needs-review" || sourceExtraction.extractionStage === "unavailable" ? "mt-1 text-amber-200" : "mt-1 text-muted-foreground"}>
+              {sourceExtraction.confidenceNote}
+            </p>
+            {(sourceExtraction.extractionStage === "needs-review" || sourceExtraction.extractionStage === "unavailable") && (
+              <p className="mt-1 text-[11px] text-amber-200">Verify and edit extracted text in the OCR section above before continuing.</p>
+            )}
+          </div>
+
+          <textarea
+            value={sourceExtraction.extractedText}
+            readOnly
+            placeholder="Extracted source text will appear here after OCR/source extraction."
+            className="min-h-32 w-full rounded-xl border border-border bg-background/70 px-3 py-2 text-xs text-foreground outline-none"
+          />
+        </div>
+
+        <div className="rounded-2xl border border-border bg-background/50 p-3">
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 2 - AI Teaching Response</div>
           <textarea
             value={teachingResponse}
             onChange={(event) => setTeachingResponse(event.target.value)}

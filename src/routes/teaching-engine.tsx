@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { MasterImageWorkflow } from "@/components/teaching-engine/MasterImageWorkflow";
 import { PromptPreview } from "@/components/teaching-engine/PromptPreview";
 import { extractAcademicQuestions } from "@/lib/teaching-engine/academicExtractor";
+import { getAutoRelevantOutputOptions } from "@/lib/teaching-engine/outputSelection";
 import { buildPromptTexts } from "@/lib/teaching-engine/promptBuilder";
 import {
   clearTeachingEngineFiles,
@@ -41,6 +42,25 @@ type BuildStage = {
 
 type WorkflowStep = "upload" | "ocr" | "profile" | "depth" | "generate" | "preview";
 
+type SourceExtractionContext = {
+  sourceFiles: string[];
+  extractedText: string;
+  extractionStage: "ready" | "needs-review" | "unavailable" | "pending";
+  confidenceLabel: "High" | "Medium" | "Low";
+  confidenceNote: string;
+  metadata: {
+    subject: string;
+    classLevel: string;
+    board: string;
+    chapter: string;
+    topic: string;
+    questionType: string;
+    language: string;
+    formulaCount: number;
+    diagramCount: number;
+  };
+};
+
 export const Route = createFileRoute("/teaching-engine")({
   validateSearch: (search: Record<string, unknown>): TeachingEngineSearch => ({
     entry:
@@ -68,6 +88,7 @@ const DEFAULT_EXTRACTED: ExtractedContent = {
   classLevel: "Not identified",
   chapter: "Not identified",
   topic: "Not identified",
+  concept: "Not identified",
   questionType: "Not identified",
   questionTypes: [],
   language: "Not identified",
@@ -75,12 +96,13 @@ const DEFAULT_EXTRACTED: ExtractedContent = {
   hasExercises: false,
   examImportance: "Not identified",
   formulae: [],
+  formulaDetails: [],
   numericalQuestions: [],
   diagrams: [],
   keywords: [],
 };
 
-const DEFAULT_STUDENT_PROFILE: StudentProfileOption[] = ["Average", "Step-by-step explanation"];
+const DEFAULT_STUDENT_PROFILE: StudentProfileOption[] = [];
 const DEFAULT_DEPTH_OPTIONS: DepthOption[] = ["Definition", "Worked examples", "Common mistakes", "Revision notes"];
 const DEFAULT_OUTPUT_OPTIONS: OutputOption[] = ["Normal Solution"];
 const DEFAULT_VISUAL_STYLE: VisualStyleOption = "Simple labeled diagram";
@@ -90,6 +112,7 @@ const FILE_PROCESSING_TIMEOUT_MS = 30000;
 const OCR_TIMEOUT_MS = 30000;
 const MAX_OCR_DIMENSION = 1800;
 type FileProcessingState = "idle" | "processing" | "success" | "error" | "timeout" | "cancelled";
+type OutputSelectionMode = "auto" | "manual";
 
 const BUILD_STAGE_LABELS: Array<{ id: BuildStageId; label: string }> = [
   { id: "ocr", label: "OCR" },
@@ -699,6 +722,131 @@ function getActionableExtractedItems(items: ExtractedContent[]) {
   return items.filter(isMeaningfulExtracted);
 }
 
+function getSourceExtractionContext(params: {
+  sourceFiles: string[];
+  ocrText: string;
+  extracted: ExtractedContent;
+  processingState: FileProcessingState;
+  intakeError: string | null;
+}): SourceExtractionContext {
+  const { sourceFiles, ocrText, extracted, processingState, intakeError } = params;
+  const hasFiles = sourceFiles.length > 0;
+  const hasText = ocrText.trim().length > 0;
+  const metadataSignals = [
+    extracted.subject,
+    extracted.classLevel,
+    extracted.board,
+    extracted.chapter,
+    extracted.topic,
+  ].filter((value) => !UNKNOWN_VALUES.has(value)).length;
+
+  if (!hasFiles) {
+    return {
+      sourceFiles,
+      extractedText: ocrText,
+      extractionStage: "pending",
+      confidenceLabel: "Low",
+      confidenceNote: "Upload source material to start OCR/source extraction.",
+      metadata: {
+        subject: extracted.subject,
+        classLevel: extracted.classLevel,
+        board: extracted.board,
+        chapter: extracted.chapter,
+        topic: extracted.topic,
+        questionType: extracted.questionType,
+        language: extracted.language,
+        formulaCount: extracted.formulae.length,
+        diagramCount: extracted.diagrams.length,
+      },
+    };
+  }
+
+  if ((processingState === "error" || processingState === "timeout") && !hasText) {
+    return {
+      sourceFiles,
+      extractedText: ocrText,
+      extractionStage: "unavailable",
+      confidenceLabel: "Low",
+      confidenceNote: intakeError ?? "OCR/source extraction failed. Verify source quality and edit text manually.",
+      metadata: {
+        subject: extracted.subject,
+        classLevel: extracted.classLevel,
+        board: extracted.board,
+        chapter: extracted.chapter,
+        topic: extracted.topic,
+        questionType: extracted.questionType,
+        language: extracted.language,
+        formulaCount: extracted.formulae.length,
+        diagramCount: extracted.diagrams.length,
+      },
+    };
+  }
+
+  const hasGoodTextLength = ocrText.trim().length >= 180;
+  const hasSignals = metadataSignals >= 2 || extracted.formulae.length > 0 || extracted.diagrams.length > 0;
+
+  if (hasText && hasGoodTextLength && hasSignals) {
+    return {
+      sourceFiles,
+      extractedText: ocrText,
+      extractionStage: "ready",
+      confidenceLabel: "High",
+      confidenceNote: "OCR/source extraction looks good. Proceed to AI learning response.",
+      metadata: {
+        subject: extracted.subject,
+        classLevel: extracted.classLevel,
+        board: extracted.board,
+        chapter: extracted.chapter,
+        topic: extracted.topic,
+        questionType: extracted.questionType,
+        language: extracted.language,
+        formulaCount: extracted.formulae.length,
+        diagramCount: extracted.diagrams.length,
+      },
+    };
+  }
+
+  if (hasText) {
+    return {
+      sourceFiles,
+      extractedText: ocrText,
+      extractionStage: "needs-review",
+      confidenceLabel: "Medium",
+      confidenceNote: "OCR confidence may be low. Please verify and edit extracted text before continuing.",
+      metadata: {
+        subject: extracted.subject,
+        classLevel: extracted.classLevel,
+        board: extracted.board,
+        chapter: extracted.chapter,
+        topic: extracted.topic,
+        questionType: extracted.questionType,
+        language: extracted.language,
+        formulaCount: extracted.formulae.length,
+        diagramCount: extracted.diagrams.length,
+      },
+    };
+  }
+
+  return {
+    sourceFiles,
+    extractedText: ocrText,
+    extractionStage: "pending",
+    confidenceLabel: "Low",
+    confidenceNote: "Waiting for extracted text from source material.",
+    metadata: {
+      subject: extracted.subject,
+      classLevel: extracted.classLevel,
+      board: extracted.board,
+      chapter: extracted.chapter,
+      topic: extracted.topic,
+      questionType: extracted.questionType,
+      language: extracted.language,
+      formulaCount: extracted.formulae.length,
+      diagramCount: extracted.diagrams.length,
+    },
+  };
+}
+
 function RouteComponent() {
   const { entry } = Route.useSearch();
   const [files, setFiles] = useState<File[]>([]);
@@ -724,6 +872,10 @@ function RouteComponent() {
   const [selectedOutputOptions, setSelectedOutputOptions] = useLocalStorage<OutputOption[]>(
     STORAGE_KEYS.teachingEngineOutputOptions,
     DEFAULT_OUTPUT_OPTIONS,
+  );
+  const [outputSelectionMode, setOutputSelectionMode] = useLocalStorage<OutputSelectionMode>(
+    STORAGE_KEYS.teachingEngineOutputSelectionMode,
+    "auto",
   );
   const [quickNumberInput, setQuickNumberInput] = useState("");
   const [visualStyle, setVisualStyle] = useLocalStorage<VisualStyleOption>(
@@ -804,7 +956,7 @@ function RouteComponent() {
       subjects: uniqueSubjects,
       teachingStyle: explanationStyle,
       visualStyle,
-      learnerProfile: studentProfile.length > 0 ? studentProfile.join(", ") : "Average",
+      learnerProfile: studentProfile.length > 0 ? studentProfile.join(", ") : "Auto / Not specified",
       estimatedOutput: selectedOutputOptions,
       estimatedReadingTime: readingRange,
     };
@@ -813,6 +965,18 @@ function RouteComponent() {
   const hasAcademicContent = useMemo(
     () => actionableExtractedItems.length > 0,
     [actionableExtractedItems],
+  );
+
+  const sourceExtractionContext = useMemo(
+    () =>
+      getSourceExtractionContext({
+        sourceFiles,
+        ocrText,
+        extracted,
+        processingState,
+        intakeError,
+      }),
+    [sourceFiles, ocrText, extracted, processingState, intakeError],
   );
 
   useEffect(() => {
@@ -850,8 +1014,10 @@ function RouteComponent() {
     setExtracted((prev) => ({
       ...DEFAULT_EXTRACTED,
       ...prev,
+      concept: prev.concept ?? "Not identified",
       questionTypes: prev.questionTypes ?? [],
       formulae: prev.formulae ?? [],
+      formulaDetails: prev.formulaDetails ?? [],
       numericalQuestions: prev.numericalQuestions ?? [],
       diagrams: prev.diagrams ?? [],
       keywords: prev.keywords ?? [],
@@ -865,8 +1031,10 @@ function RouteComponent() {
       prev.map((item) => ({
         ...DEFAULT_EXTRACTED,
         ...item,
+        concept: item.concept ?? "Not identified",
         questionTypes: item.questionTypes ?? [],
         formulae: item.formulae ?? [],
+        formulaDetails: item.formulaDetails ?? [],
         numericalQuestions: item.numericalQuestions ?? [],
         diagrams: item.diagrams ?? [],
         keywords: item.keywords ?? [],
@@ -885,8 +1053,30 @@ function RouteComponent() {
     });
   }, [setSelectedOutputOptions]);
 
+  useEffect(() => {
+    if (outputSelectionMode !== "auto") return;
+
+    const nextAutoSelection = getAutoRelevantOutputOptions({
+      extracted,
+      studentProfile,
+      objective,
+    });
+
+    setSelectedOutputOptions((prev) => {
+      const normalizedPrev = [...new Set(prev)];
+      if (
+        normalizedPrev.length === nextAutoSelection.length
+        && normalizedPrev.every((item, index) => item === nextAutoSelection[index])
+      ) {
+        return prev;
+      }
+      return nextAutoSelection;
+    });
+  }, [extracted, objective, outputSelectionMode, setSelectedOutputOptions, studentProfile]);
+
   function toggleProfile(option: StudentProfileOption) {
     setWorkflowStep("profile");
+    setOutputSelectionMode("manual");
     setStudentProfile((prev) =>
       prev.includes(option) ? prev.filter((item) => item !== option) : [...prev, option],
     );
@@ -902,6 +1092,7 @@ function RouteComponent() {
   function toggleOutputOption(option: OutputOption) {
     if (option === "Normal Solution") return;
     setWorkflowStep("generate");
+    setOutputSelectionMode("manual");
     setSelectedOutputOptions((prev) => {
       const next = prev.filter((item) => item !== "Normal Solution");
       return prev.includes(option)
@@ -933,17 +1124,20 @@ function RouteComponent() {
         if (option) nextSelection.add(option);
       });
 
+    setOutputSelectionMode("manual");
     setSelectedOutputOptions(Array.from(nextSelection));
     setQuickNumberInput("");
   }
 
   function selectAllOutputOptions() {
     setWorkflowStep("generate");
+    setOutputSelectionMode("manual");
     setSelectedOutputOptions(["Normal Solution", ...relevantOutputOptions]);
   }
 
   function clearOutputOptions() {
     setWorkflowStep("generate");
+    setOutputSelectionMode("manual");
     setSelectedOutputOptions(["Normal Solution"]);
   }
 
@@ -1068,6 +1262,7 @@ function RouteComponent() {
     setWorkflowStep("upload");
     setStudentProfile(DEFAULT_STUDENT_PROFILE);
     setDepthOptions(DEFAULT_DEPTH_OPTIONS);
+    setOutputSelectionMode("auto");
     setSelectedOutputOptions(DEFAULT_OUTPUT_OPTIONS);
     setVisualStyle(DEFAULT_VISUAL_STYLE);
     setExplanationStyle(DEFAULT_EXPLANATION_STYLE);
@@ -1783,7 +1978,7 @@ function RouteComponent() {
           summary={promptSummary}
         />
 
-        <MasterImageWorkflow extracted={extracted} prompt={prompt} />
+        <MasterImageWorkflow extracted={extracted} prompt={prompt} sourceExtraction={sourceExtractionContext} />
       </div>
     </AppShell>
   );

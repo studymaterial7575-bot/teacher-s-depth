@@ -1,4 +1,4 @@
-import type { ExtractedContent } from "@/types/teaching-engine";
+import type { ExtractedContent, FormulaExtraction } from "@/types/teaching-engine";
 
 const UNKNOWN = "Unknown";
 const MIN_CONFIDENCE = 0.6;
@@ -8,6 +8,7 @@ type SubjectKey = "Physics" | "Biology" | "Chemistry" | "History" | "Geography" 
 type TopicRule = {
   topic: string;
   chapter: string;
+  concept?: string;
   aliases: string[];
 };
 
@@ -20,11 +21,24 @@ type SubjectRule = {
 const SUBJECT_RULES: Record<SubjectKey, SubjectRule> = {
   Physics: {
     aliases: ["physics"],
-    keywords: ["ohm", "current", "voltage", "resistance", "electricity", "circuit", "v = i", "v=ir", "power", "motion", "force"],
+    keywords: [
+      "ohm", "current", "voltage", "resistance", "electricity", "circuit", "v = i", "v=ir", "power", "motion", "force",
+      "object", "image", "mirror", "spherical mirror", "concave", "convex", "focus", "focal", "pole", "principal axis",
+      "centre of curvature", "center of curvature", "radius of curvature", "mirror formula", "magnification", "ray diagram",
+    ],
     topics: [
       { topic: "Ohm's Law", chapter: "Electricity", aliases: ["ohm", "ohm's law", "v = ir", "v=ir", "resistance", "current", "voltage"] },
       { topic: "Electric Circuit", chapter: "Electricity", aliases: ["circuit", "series circuit", "parallel circuit"] },
       { topic: "Motion", chapter: "Motion", aliases: ["velocity", "acceleration", "displacement", "motion"] },
+      {
+        topic: "Light / Spherical Mirrors",
+        chapter: "Light - Reflection and Refraction",
+        concept: "Concave/Convex Mirror",
+        aliases: [
+          "spherical mirror", "concave", "convex", "focus", "focal length", "centre of curvature", "center of curvature",
+          "principal axis", "pole", "mirror formula", "magnification", "ray diagram", "object distance", "image distance",
+        ],
+      },
     ],
   },
   Biology: {
@@ -238,6 +252,16 @@ function detectClassLevel(text: string) {
 function detectTopicAndChapter(segment: string, subject: string) {
   const explicitTopic = segment.match(/\btopic\s*[:\-]?\s*([^\n.]+)/i)?.[1]?.trim();
   const explicitChapter = segment.match(/\bchapter\s*[:\-]?\s*([^\n.]+)/i)?.[1]?.trim();
+  const lower = normalize(segment);
+
+  const mirrorConcept = (() => {
+    const hasConcave = /\bconcave\b/.test(lower);
+    const hasConvex = /\bconvex\b/.test(lower);
+    if (hasConcave && hasConvex) return "Concave/Convex Mirror";
+    if (hasConcave) return "Concave Mirror";
+    if (hasConvex) return "Convex Mirror";
+    return undefined;
+  })();
 
   const validExplicitChapter = explicitChapter && !GENERIC_CHAPTER_WORDS.has(explicitChapter.toLowerCase())
     ? explicitChapter
@@ -256,8 +280,10 @@ function detectTopicAndChapter(segment: string, subject: string) {
         return {
           topic: topicRule.topic,
           chapter: validExplicitChapter ?? topicRule.chapter,
+          concept: mirrorConcept ?? topicRule.concept ?? UNKNOWN,
           topicConfidence: 0.92,
           chapterConfidence: validExplicitChapter ? 0.86 : 0.84,
+          conceptConfidence: mirrorConcept ? 0.9 : topicRule.concept ? 0.78 : 0.3,
         };
       }
     }
@@ -265,14 +291,15 @@ function detectTopicAndChapter(segment: string, subject: string) {
     return {
       topic: explicitTopic,
       chapter: validExplicitChapter ?? UNKNOWN,
+      concept: mirrorConcept ?? UNKNOWN,
       topicConfidence: 0.92,
       chapterConfidence: validExplicitChapter ? 0.86 : 0.45,
+      conceptConfidence: mirrorConcept ? 0.86 : 0.3,
     };
   }
 
   if (subject !== UNKNOWN && subject in SUBJECT_RULES) {
     const subjectRule = SUBJECT_RULES[subject as SubjectKey];
-    const lower = normalize(segment);
     const candidates = subjectRule.topics
       .map((topicRule) => ({
         topicRule,
@@ -286,8 +313,10 @@ function detectTopicAndChapter(segment: string, subject: string) {
       return {
         topic: winner.topicRule.topic,
         chapter: validExplicitChapter ?? winner.topicRule.chapter,
+        concept: mirrorConcept ?? winner.topicRule.concept ?? UNKNOWN,
         topicConfidence: clamp(0.74 + winner.score * 0.05),
         chapterConfidence: validExplicitChapter ? 0.86 : clamp(0.72 + winner.score * 0.05),
+        conceptConfidence: mirrorConcept ? 0.88 : winner.topicRule.concept ? 0.76 : 0.3,
       };
     }
   }
@@ -299,8 +328,10 @@ function detectTopicAndChapter(segment: string, subject: string) {
       return {
         topic: tail,
         chapter: validExplicitChapter ?? UNKNOWN,
+        concept: mirrorConcept ?? UNKNOWN,
         topicConfidence: 0.66,
         chapterConfidence: validExplicitChapter ? 0.86 : 0.45,
+        conceptConfidence: mirrorConcept ? 0.84 : 0.3,
       };
     }
   }
@@ -308,33 +339,30 @@ function detectTopicAndChapter(segment: string, subject: string) {
   return {
     topic: UNKNOWN,
     chapter: validExplicitChapter ?? UNKNOWN,
+    concept: mirrorConcept ?? UNKNOWN,
     topicConfidence: 0.3,
     chapterConfidence: validExplicitChapter ? 0.86 : 0.3,
+    conceptConfidence: mirrorConcept ? 0.8 : 0.3,
   };
 }
 
 function detectQuestionType(segment: string) {
   const lower = normalize(segment);
 
-  if (/\b(mcq|multiple choice|true\s*or\s*false|objective)\b/.test(lower)) {
-    return { value: "Objective", confidence: 0.95 };
-  }
+  const ranked: Array<{ value: string; confidence: number; pattern: RegExp }> = [
+    { value: "Exam Question", confidence: 0.92, pattern: /\b(board question|past paper|exam question|sample paper)\b/ },
+    { value: "MCQ/Objective", confidence: 0.95, pattern: /\b(mcq|multiple choice|true\s*or\s*false|objective|choose the correct)\b/ },
+    { value: "Derivation", confidence: 0.93, pattern: /\b(derive|proof|prove|show that)\b/ },
+    { value: "Numerical/Problem", confidence: 0.93, pattern: /\b(calculate|find|compute|evaluate|determine)\b/ },
+    { value: "Diagram-based", confidence: 0.9, pattern: /\b(draw|label|sketch|diagram|plot|ray diagram)\b/ },
+    { value: "Comparison", confidence: 0.88, pattern: /\b(compare|differentiate|distinguish|contrast)\b/ },
+    { value: "Application", confidence: 0.86, pattern: /\b(application|real life|uses|apply)\b/ },
+    { value: "Concept Explanation", confidence: 0.86, pattern: /\b(explain|describe|discuss|why|how)\b/ },
+    { value: "Definition", confidence: 0.82, pattern: /\b(state|define|name|list|what is)\b/ },
+  ];
 
-  if (/\b(calculate|find|compute|evaluate|determine)\b/.test(lower)) {
-    return { value: "Numerical", confidence: 0.93 };
-  }
-
-  if (/\b(draw|label|sketch|diagram|plot)\b/.test(lower)) {
-    return { value: "Diagram Required", confidence: 0.9 };
-  }
-
-  if (/\b(explain|describe|discuss|why|how)\b/.test(lower)) {
-    return { value: "Long Answer", confidence: 0.86 };
-  }
-
-  if (/\b(state|define|name|list)\b/.test(lower)) {
-    return { value: "Short Answer", confidence: 0.78 };
-  }
+  const hit = ranked.find((item) => item.pattern.test(lower));
+  if (hit) return { value: hit.value, confidence: hit.confidence };
 
   return { value: UNKNOWN, confidence: 0.35 };
 }
@@ -343,24 +371,48 @@ function detectQuestionTypes(segment: string) {
   const lower = normalize(segment);
   const types = new Set<string>();
 
-  if (/\b(mcq|multiple choice|true\s*or\s*false|objective)\b/.test(lower)) {
-    types.add("Objective");
+  if (/\b(mcq|multiple choice|true\s*or\s*false|objective|choose the correct)\b/.test(lower)) {
+    types.add("MCQ/Objective");
   }
 
   if (/\b(calculate|find|compute|evaluate|determine)\b/.test(lower)) {
-    types.add("Numerical");
+    types.add("Numerical/Problem");
   }
 
-  if (/\b(draw|label|sketch|diagram|plot)\b/.test(lower)) {
-    types.add("Diagram Required");
+  if (/\b(draw|label|sketch|diagram|plot|ray diagram)\b/.test(lower)) {
+    types.add("Diagram-based");
   }
 
   if (/\b(explain|describe|discuss|why|how)\b/.test(lower)) {
+    types.add("Concept Explanation");
+  }
+
+  if (/\b(state|define|name|list|what is)\b/.test(lower)) {
+    types.add("Definition");
+  }
+
+  if (/\b(derive|proof|prove|show that)\b/.test(lower)) {
+    types.add("Derivation");
+  }
+
+  if (/\b(compare|differentiate|distinguish|contrast)\b/.test(lower)) {
+    types.add("Comparison");
+  }
+
+  if (/\b(application|real life|uses|apply)\b/.test(lower)) {
+    types.add("Application");
+  }
+
+  if (/\b(short answer|\b2 marks?\b)\b/.test(lower)) {
+    types.add("Short Answer");
+  }
+
+  if (/\b(long answer|\b5 marks?\b|\b8 marks?\b)\b/.test(lower)) {
     types.add("Long Answer");
   }
 
-  if (/\b(state|define|name|list)\b/.test(lower)) {
-    types.add("Short Answer");
+  if (/\b(board question|past paper|exam question|sample paper)\b/.test(lower)) {
+    types.add("Exam Question");
   }
 
   if (types.size === 0) {
@@ -405,11 +457,99 @@ function detectExamImportance(text: string) {
   return "Past-paper frequency unavailable.";
 }
 
-function extractFormulae(segment: string) {
-  return segment
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => /([A-Za-z][A-Za-z0-9_]*\s*=\s*[^=].*|[A-Za-z]+\s*\+\s*[A-Za-z]+\s*(->|→)\s*[A-Za-z]+|\bV\s*=\s*I\s*R\b)/i.test(line));
+function normalizeFormulaText(rawFormula: string) {
+  let normalized = rawFormula
+    .replace(/[|]/g, "1")
+    .replace(/[—–]/g, "-")
+    .replace(/[×]/g, "*")
+    .replace(/[÷]/g, "/")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  normalized = normalized
+    .replace(/\b([Il])\s*\/(?=[fuvm]\b)/g, "1/")
+    .replace(/\b([1])\s*\/\s*([fuvm])\b/gi, "1/$2")
+    .replace(/\b([fuvm])\s*=\s*([fuvm])\s*\/\s*([fuvm])\b/gi, "$1 = $2/$3")
+    .replace(/\b([fuvm])\s*=\s*([fuvm])\s*\+\s*([fuvm])\b/gi, "$1 = $2 + $3");
+
+  return normalized;
+}
+
+function scoreFormulaConfidence(raw: string, normalized: string) {
+  if (!normalized) return 0.2;
+
+  const hasEquality = /=/.test(normalized);
+  const hasMathOp = /[+\-*/^]/.test(normalized);
+  const hasMathTokens = /\b(f|u|v|m|i|r|p|h|a|b|c|d)\b/i.test(normalized);
+  const changed = raw.trim() !== normalized.trim();
+
+  let confidence = 0.45;
+  if (hasEquality) confidence += 0.22;
+  if (hasMathOp) confidence += 0.16;
+  if (hasMathTokens) confidence += 0.12;
+  if (changed) confidence += 0.08;
+
+  return clamp(confidence, 0.2, 0.98);
+}
+
+function extractFormulaCandidates(segment: string) {
+  const lines = segment.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const candidates = new Set<string>();
+
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const line = lines[idx];
+    const lower = line.toLowerCase();
+    const isFormulaLike =
+      /([A-Za-z][A-Za-z0-9_]*\s*=\s*[^=].*|\b\d+\s*\/\s*[A-Za-z]\b|\b[A-Za-z]+\s*\+\s*[A-Za-z]+\s*(->|→)\s*[A-Za-z]+|\bV\s*=\s*I\s*R\b)/i.test(line) ||
+      /\b(mirror formula|magnification|focal length)\b/i.test(lower);
+
+    if (isFormulaLike) {
+      candidates.add(line);
+      continue;
+    }
+
+    if (/^[fuvm]$/i.test(line)) {
+      const prev = lines[idx - 1] ?? "";
+      const next = lines[idx + 1] ?? "";
+      if (/^[fuvm]$/i.test(prev) || /^[fuvm]$/i.test(next) || /=|\//.test(next) || /=|\//.test(prev)) {
+        candidates.add(line);
+      }
+    }
+  }
+
+  const merged = lines.join(" ");
+  const inlineMirror = merged.match(/([1I|l]\s*\/\s*[fuvm]\s*=\s*[1I|l]\s*\/\s*[fuvm]\s*[+\-]\s*[1I|l]\s*\/\s*[fuvm])/i);
+  if (inlineMirror?.[1]) {
+    candidates.add(inlineMirror[1]);
+  }
+
+  return Array.from(candidates);
+}
+
+function extractFormulaeDetailed(segment: string): FormulaExtraction[] {
+  const candidates = extractFormulaCandidates(segment);
+  const details = candidates.map((raw) => {
+    const normalized = normalizeFormulaText(raw);
+    const confidence = scoreFormulaConfidence(raw, normalized);
+    return {
+      raw,
+      normalized,
+      confidence,
+    } satisfies FormulaExtraction;
+  });
+
+  const deduped = new Map<string, FormulaExtraction>();
+  for (const item of details) {
+    const key = item.normalized.toLowerCase();
+    const current = deduped.get(key);
+    if (!current || item.confidence > current.confidence) {
+      deduped.set(key, item);
+    }
+  }
+
+  return Array.from(deduped.values()).filter((item) => item.normalized.length > 0);
 }
 
 function extractNumericalQuestions(segment: string) {
@@ -444,7 +584,8 @@ function extractKeywords(segment: string) {
     .map(([token]) => token);
 }
 
-function enforceConfidence(value: string, confidence: number) {
+function enforceConfidence(value: string | undefined, confidence: number) {
+  if (!value) return UNKNOWN;
   return confidence >= MIN_CONFIDENCE ? value : UNKNOWN;
 }
 
@@ -461,12 +602,17 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
   const hasExercises = detectHasExercises(cleaned);
   const examImportance = detectExamImportance(cleaned);
   const blocks = splitIntoQuestionBlocks(cleaned);
+  const cleanedFormulaDetails = extractFormulaeDetailed(cleaned);
 
   const questions = blocks.map((block) => {
     const subjectGuess = detectSubject(block);
     const topicAndChapter = detectTopicAndChapter(block, subjectGuess.subject);
     const questionType = detectQuestionType(block);
     const questionTypes = detectQuestionTypes(block);
+    const formulaDetails = extractFormulaeDetailed(block);
+    const normalizedFormulae = formulaDetails
+      .filter((item) => item.confidence >= 0.6)
+      .map((item) => item.normalized);
 
     return {
       ocrText: block,
@@ -475,13 +621,15 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
       classLevel: enforceConfidence(classGuess.value, classGuess.confidence),
       chapter: enforceConfidence(topicAndChapter.chapter, topicAndChapter.chapterConfidence),
       topic: enforceConfidence(topicAndChapter.topic, topicAndChapter.topicConfidence),
+      concept: enforceConfidence(topicAndChapter.concept, topicAndChapter.conceptConfidence),
       questionType: enforceConfidence(questionType.value, questionType.confidence),
       questionTypes,
       language: enforceConfidence(languageGuess.value, languageGuess.confidence),
       hasTables,
       hasExercises,
       examImportance,
-      formulae: extractFormulae(block),
+      formulae: normalizedFormulae,
+      formulaDetails,
       numericalQuestions: extractNumericalQuestions(block),
       diagrams: extractDiagramPrompts(block),
       keywords: extractKeywords(block),
@@ -491,6 +639,7 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
         classLevel: classGuess.confidence,
         chapter: topicAndChapter.chapterConfidence,
         topic: topicAndChapter.topicConfidence,
+        concept: topicAndChapter.conceptConfidence,
         questionType: questionType.confidence,
         language: languageGuess.confidence,
       },
@@ -507,13 +656,17 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
           classLevel: enforceConfidence(classGuess.value, classGuess.confidence),
           chapter: UNKNOWN,
           topic: UNKNOWN,
+          concept: UNKNOWN,
           questionType: UNKNOWN,
           questionTypes: [UNKNOWN],
           language: enforceConfidence(languageGuess.value, languageGuess.confidence),
           hasTables,
           hasExercises,
           examImportance,
-          formulae: extractFormulae(cleaned),
+          formulae: cleanedFormulaDetails
+            .filter((item) => item.confidence >= 0.6)
+            .map((item) => item.normalized),
+          formulaDetails: cleanedFormulaDetails,
           numericalQuestions: extractNumericalQuestions(cleaned),
           diagrams: extractDiagramPrompts(cleaned),
           keywords: extractKeywords(cleaned),
@@ -523,6 +676,7 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
             classLevel: classGuess.confidence,
             chapter: 0.2,
             topic: 0.2,
+            concept: 0.2,
             questionType: 0.35,
             language: languageGuess.confidence,
           },

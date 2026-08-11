@@ -27,7 +27,7 @@ describe("academic extraction pipeline", () => {
     expect(items[0].subject).toBe("Physics");
     expect(items[0].chapter).toBe("Electricity");
     expect(items[0].topic).toBe("Ohm's Law");
-    expect(items[0].questionType).toBe("Numerical");
+    expect(items[0].questionType).toBe("Numerical/Problem");
     expect(items[0].formulae.join(" ")).toContain("V = IR");
   });
 
@@ -43,7 +43,7 @@ describe("academic extraction pipeline", () => {
     expect(items[0].subject).toBe("Biology");
     expect(items[0].chapter).toBe("Life Processes");
     expect(items[0].topic).toBe("Photosynthesis");
-    expect(items[0].questionType).toBe("Long Answer");
+    expect(items[0].questionType).toBe("Concept Explanation");
     expect(items[0].formulae.join(" ")).toContain("Glucose + Oxygen");
   });
 
@@ -91,7 +91,7 @@ describe("academic extraction pipeline", () => {
     const items = extractAcademicQuestions(text);
     expect(items).toHaveLength(1);
     expect(items[0].subject).toBe("Geography");
-    expect(items[0].questionType).toBe("Diagram Required");
+    expect(items[0].questionType).toBe("Diagram-based");
     expect(items[0].diagrams.length).toBeGreaterThan(0);
   });
 
@@ -99,7 +99,7 @@ describe("academic extraction pipeline", () => {
     const text = "Find the current when voltage is 12V and resistance is 3 ohm.";
     const items = extractAcademicQuestions(text);
     expect(items).toHaveLength(1);
-    expect(items[0].questionType).toBe("Numerical");
+    expect(items[0].questionType).toBe("Numerical/Problem");
     expect(items[0].numericalQuestions.length).toBeGreaterThan(0);
   });
 
@@ -108,7 +108,37 @@ describe("academic extraction pipeline", () => {
     const items = extractAcademicQuestions(text);
     expect(items).toHaveLength(1);
     expect(items[0].subject).toBe("History");
-    expect(items[0].questionType).toBe("Long Answer");
+    expect(items[0].questionType).toBe("Concept Explanation");
+  });
+
+  it("classifies spherical mirror content as Physics and detects concept", () => {
+    const text = [
+      "An object is placed in front of a concave mirror.",
+      "Mark focus and centre of curvature on the principal axis.",
+      "Use mirror formula to explain image formation.",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+    expect(items).toHaveLength(1);
+    expect(items[0].subject).toBe("Physics");
+    expect(items[0].topic).toBe("Light / Spherical Mirrors");
+    expect(items[0].concept).toBe("Concave Mirror");
+    expect(items[0].board).toBe("Unknown");
+    expect(items[0].keywords).toEqual(expect.arrayContaining(["object", "focus", "curvature"]));
+  });
+
+  it("normalizes OCR-corrupted mirror formula while preserving raw formula", () => {
+    const text = [
+      "mirror formula",
+      "I/f = I/v + I/u",
+      "m = v/u",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+    expect(items).toHaveLength(1);
+    expect((items[0].formulaDetails?.length ?? 0) > 0).toBe(true);
+    expect(items[0].formulae.join(" | ")).toContain("1/f = 1/v + 1/u");
+    expect(items[0].formulaDetails?.some((item) => item.raw.includes("I/f") && item.normalized.includes("1/f"))).toBe(true);
   });
 
   it("ignores chat UI noise", () => {

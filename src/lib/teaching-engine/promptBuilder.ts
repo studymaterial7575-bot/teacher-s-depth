@@ -261,13 +261,18 @@ function buildSinglePrompt(input: PromptBuilderInput) {
   } = input;
 
   const fileList = sourceFiles.length > 0 ? sourceFiles : ["No files attached"];
-  const profileList = studentProfile.length > 0 ? studentProfile : ["Average"];
+  const profileList = studentProfile.length > 0
+    ? studentProfile.map((item) => `${item} (teacher override)`)
+    : ["Auto / Not specified (no teacher override provided)"];
   const depthList = depthOptions.length > 0 ? depthOptions : ["Definition", "Worked examples"];
   const outputOptions = selectedOutputOptions.length > 0 ? selectedOutputOptions : ["Normal Solution"];
   const numberedOutputOptions = getNumberedOutputOptions(OUTPUT_OPTIONS).filter(({ name }) => outputOptions.includes(name as any));
   const objectiveLine = objective.trim() || "Generate a clear classroom-ready explanation for this learner.";
   const ocrPreview = extracted.ocrText.trim() || "No OCR text provided. Use extracted metadata and inferred chapter context.";
   const examEvidence = formatExamImportanceEvidence(extracted.examImportance);
+  const formulaList = extracted.formulaDetails && extracted.formulaDetails.length > 0
+    ? extracted.formulaDetails.map((item) => `${item.normalized} (confidence ${Math.round(item.confidence * 100)}%, raw: ${item.raw})`)
+    : extracted.formulae;
 
   return `You are generating a teaching response from classroom content. This is not a chatbot conversation.
 Create a high-quality educational output exactly using the constraints below.
@@ -282,6 +287,7 @@ EXTRACTED CONTENT:
 - Class: ${extracted.classLevel}
 - Chapter: ${extracted.chapter}
 - Topic: ${extracted.topic}
+- Concept: ${extracted.concept?.trim() ? extracted.concept : "Not identified"}
 - Question type: ${extracted.questionType}
 - Question type (primary): ${extracted.questionType}
 - Question types detected: ${extracted.questionTypes.length > 0 ? extracted.questionTypes.join(" | ") : "Not identified"}
@@ -289,7 +295,7 @@ EXTRACTED CONTENT:
 - Contains tables: ${extracted.hasTables ? "Yes" : "No"}
 - Contains exercises: ${extracted.hasExercises ? "Yes" : "No"}
 - Exam importance: ${examEvidence}
-- Formulae: ${extracted.formulae.length > 0 ? extracted.formulae.join(" | ") : "Not identified"}
+- Formulae: ${formulaList.length > 0 ? formulaList.join(" | ") : "Not identified"}
 - Numerical questions: ${extracted.numericalQuestions.length > 0 ? extracted.numericalQuestions.join(" | ") : "Not identified"}
 - Diagrams: ${extracted.diagrams.length > 0 ? extracted.diagrams.join(" | ") : "Not identified"}
 - Keywords: ${extracted.keywords.length > 0 ? extracted.keywords.join(", ") : "Not identified"}
