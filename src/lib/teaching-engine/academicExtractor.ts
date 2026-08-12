@@ -1,6 +1,7 @@
 import type { ExtractedContent, FormulaExtraction } from "@/types/teaching-engine";
 
 const UNKNOWN = "Unknown";
+const NOT_IDENTIFIED = "Not identified";
 const MIN_CONFIDENCE = 0.6;
 
 type SubjectKey = "Physics" | "Biology" | "Chemistry" | "History" | "Geography" | "Mathematics" | "English";
@@ -148,6 +149,28 @@ export function sanitizeOcrText(text: string) {
   return lines.join("\n").trim();
 }
 
+function normalizeOcrForAnalysis(text: string) {
+  // Preserve formulas and numeric tokens while fixing common OCR confusions in key academic terms.
+  const lines = text.split(/\r?\n/).map((line) =>
+    line
+      .replace(/\bc[0o]ncave\b/gi, "concave")
+      .replace(/\bc[0o]nvex\b/gi, "convex")
+      .replace(/\bf[0o]cus\b/gi, "focus")
+      .replace(/\bpo1e\b/gi, "pole")
+      .replace(/\b0bject\b/gi, "object")
+      .replace(/\b1mage\b/gi, "image")
+      .replace(/\breflecti[0o]n\b/gi, "reflection")
+      .replace(/\bcurvatu[rn]e\b/gi, "curvature")
+      .replace(/\bcent[er]{2}\s+of\s+curvature\b/gi, "centre of curvature")
+      .replace(/\bcenter\s+of\s+curvature\b/gi, "centre of curvature")
+      .replace(/\bprincipal\s+a[xk]is\b/gi, "principal axis")
+      .replace(/[ \t]+/g, " ")
+      .trim(),
+  );
+
+  return lines.filter(Boolean).join("\n");
+}
+
 function isBoundaryLine(line: string) {
   const lower = normalize(line);
   if (/^(test|question|q)\s*\d+/i.test(line)) return true;
@@ -240,13 +263,13 @@ function detectBoard(text: string) {
   if (lower.includes("icse")) return { value: "ICSE", confidence: 0.96 };
   if (lower.includes("igcse")) return { value: "IGCSE", confidence: 0.96 };
   if (lower.includes("state board") || /\bssc\b/.test(lower)) return { value: "State Board", confidence: 0.84 };
-  return { value: UNKNOWN, confidence: 0.28 };
+  return { value: NOT_IDENTIFIED, confidence: 0.28 };
 }
 
 function detectClassLevel(text: string) {
   const match = text.match(/\b(?:class|grade|std)\s*([6-9]|10|11|12)\b/i);
   if (match?.[1]) return { value: `Class ${match[1]}`, confidence: 0.95 };
-  return { value: UNKNOWN, confidence: 0.3 };
+  return { value: NOT_IDENTIFIED, confidence: 0.3 };
 }
 
 function detectTopicAndChapter(segment: string, subject: string) {
@@ -595,14 +618,16 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
     return [];
   }
 
-  const boardGuess = detectBoard(cleaned);
-  const classGuess = detectClassLevel(cleaned);
-  const languageGuess = detectLanguage(cleaned);
-  const hasTables = detectHasTables(cleaned);
-  const hasExercises = detectHasExercises(cleaned);
-  const examImportance = detectExamImportance(cleaned);
-  const blocks = splitIntoQuestionBlocks(cleaned);
-  const cleanedFormulaDetails = extractFormulaeDetailed(cleaned);
+  const cleanedForAnalysis = normalizeOcrForAnalysis(cleaned);
+
+  const boardGuess = detectBoard(cleanedForAnalysis);
+  const classGuess = detectClassLevel(cleanedForAnalysis);
+  const languageGuess = detectLanguage(cleanedForAnalysis);
+  const hasTables = detectHasTables(cleanedForAnalysis);
+  const hasExercises = detectHasExercises(cleanedForAnalysis);
+  const examImportance = detectExamImportance(cleanedForAnalysis);
+  const blocks = splitIntoQuestionBlocks(cleanedForAnalysis);
+  const cleanedFormulaDetails = extractFormulaeDetailed(cleanedForAnalysis);
 
   const questions = blocks.map((block) => {
     const subjectGuess = detectSubject(block);
@@ -616,9 +641,10 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
 
     return {
       ocrText: block,
+      cleanedOcrText: block,
       subject: enforceConfidence(subjectGuess.subject, subjectGuess.confidence),
-      board: enforceConfidence(boardGuess.value, boardGuess.confidence),
-      classLevel: enforceConfidence(classGuess.value, classGuess.confidence),
+      board: boardGuess.value,
+      classLevel: classGuess.value,
       chapter: enforceConfidence(topicAndChapter.chapter, topicAndChapter.chapterConfidence),
       topic: enforceConfidence(topicAndChapter.topic, topicAndChapter.topicConfidence),
       concept: enforceConfidence(topicAndChapter.concept, topicAndChapter.conceptConfidence),
@@ -651,9 +677,10 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
     : [
         {
           ocrText: cleaned,
+          cleanedOcrText: cleanedForAnalysis,
           subject: UNKNOWN,
-          board: enforceConfidence(boardGuess.value, boardGuess.confidence),
-          classLevel: enforceConfidence(classGuess.value, classGuess.confidence),
+          board: boardGuess.value,
+          classLevel: classGuess.value,
           chapter: UNKNOWN,
           topic: UNKNOWN,
           concept: UNKNOWN,

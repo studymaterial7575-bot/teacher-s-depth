@@ -1,5 +1,7 @@
 import type { ExtractedContent, OutputOption, StudentProfileOption } from "@/types/teaching-engine";
 
+type DeepLearningOutputOption = Exclude<OutputOption, "Normal Solution">;
+
 type AutoSelectionInput = {
   extracted: ExtractedContent;
   studentProfile: StudentProfileOption[];
@@ -150,7 +152,7 @@ export function getAutoRelevantOutputOptions(input: AutoSelectionInput): OutputO
   const sorted = pinned.filter((option) => ordered.includes(option));
   const deepFunctions = sorted.filter((option) => option !== "Normal Solution");
 
-  const mustKeep: OutputOption[] = [
+  const mustKeep: DeepLearningOutputOption[] = [
     "Logical Flow",
     "Common Mistakes",
     "Practice Questions",

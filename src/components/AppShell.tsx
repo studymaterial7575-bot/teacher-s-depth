@@ -27,11 +27,11 @@ export function AppShell({
       />
 
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-3xl items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
           {back ? (
             <a
               href={back.to}
-              className="inline-flex min-h-10 items-center rounded-full border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
+              className="inline-flex min-h-10 items-center rounded-full border border-border bg-card/60 px-3 py-2 text-[11px] text-muted-foreground hover:text-foreground"
             >
               ← {back.label ?? "Back"}
             </a>
@@ -43,7 +43,7 @@ export function AppShell({
               >
                 <Sparkles size={18} />
               </span>
-              <span className="text-sm font-bold tracking-tight">Teacher's Depth</span>
+              <span className="text-xs font-bold tracking-tight sm:text-sm">Teacher's Depth</span>
             </Link>
           )}
 
@@ -54,15 +54,15 @@ export function AppShell({
           </div>
         </div>
 
-        <div className="mx-auto max-w-3xl px-4 pb-3">
+        <div className="mx-auto max-w-3xl px-3 pb-3 sm:px-4">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               if (q.trim()) navigate({ to: "/search", search: { q } });
             }}
-            className="flex items-center gap-2 rounded-2xl border border-border bg-card/70 px-3 py-2 backdrop-blur"
+            className="flex min-h-11 items-center gap-2 rounded-2xl border border-border bg-card/70 px-3 py-2 backdrop-blur"
           >
-            <Search size={16} className="text-muted-foreground" />
+            <Search size={16} className="shrink-0 text-muted-foreground" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -71,18 +71,18 @@ export function AppShell({
             />
           </form>
           {title && (
-            <h1 className="mt-3 text-lg font-bold tracking-tight text-foreground">{title}</h1>
+            <h1 className="mt-3 text-base font-bold tracking-tight text-foreground sm:text-lg">{title}</h1>
           )}
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-4">{children}</main>
+      <main className="mx-auto w-full max-w-3xl px-3 pb-[5.5rem] pt-3 sm:px-4 sm:pb-28 sm:pt-4">{children}</main>
 
       {/* Bottom nav with safe-area padding */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/80 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/80 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] backdrop-blur-xl md:hidden"
       >
-        <div className="mx-auto grid max-w-3xl grid-cols-3 px-4">
+        <div className="mx-auto grid max-w-3xl grid-cols-3 px-3 py-1">
           <NavItem to="/" icon={Home} label="Home" />
           <NavItem to="/bookmarks" icon={Bookmark} label="Saved" />
           <NavItem to="/companion" icon={Sparkles} label="AI" />
@@ -104,7 +104,7 @@ function NavItem({
   return (
     <Link
       to={to as any}
-      className="flex min-h-12 flex-col items-center justify-center gap-1 px-2 py-2 text-xs text-muted-foreground hover:text-foreground"
+      className="flex min-h-[3.25rem] flex-col items-center justify-center gap-1 px-2 py-2 text-[12px] text-muted-foreground hover:text-foreground"
     >
       <Icon size={18} />
       {label}

@@ -83,6 +83,7 @@ export const Route = createFileRoute("/teaching-engine")({
 
 const DEFAULT_EXTRACTED: ExtractedContent = {
   ocrText: "",
+  cleanedOcrText: "",
   subject: "Not identified",
   board: "Not identified",
   classLevel: "Not identified",
@@ -1014,6 +1015,7 @@ function RouteComponent() {
     setExtracted((prev) => ({
       ...DEFAULT_EXTRACTED,
       ...prev,
+      cleanedOcrText: prev.cleanedOcrText ?? "",
       concept: prev.concept ?? "Not identified",
       questionTypes: prev.questionTypes ?? [],
       formulae: prev.formulae ?? [],
@@ -1031,6 +1033,7 @@ function RouteComponent() {
       prev.map((item) => ({
         ...DEFAULT_EXTRACTED,
         ...item,
+        cleanedOcrText: item.cleanedOcrText ?? "",
         concept: item.concept ?? "Not identified",
         questionTypes: item.questionTypes ?? [],
         formulae: item.formulae ?? [],
@@ -1271,7 +1274,10 @@ function RouteComponent() {
 
   async function onFileChange(event: React.ChangeEvent<HTMLInputElement>, append = false) {
     const selected = Array.from(event.target.files ?? []);
-    if (selected.length === 0) return;
+    if (selected.length === 0) {
+      event.target.value = "";
+      return;
+    }
     await processFiles(selected, append);
     event.target.value = "";
   }
@@ -1428,8 +1434,8 @@ function RouteComponent() {
 
   return (
     <AppShell back={{ to: "/" }} title="Prompt Builder Engine">
-      <div className="space-y-4">
-        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
+      <div className="space-y-3 pb-28 sm:space-y-4 md:pb-8">
+        <section className="rounded-3xl border border-border bg-card/70 p-3 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-4 md:p-5">
           <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             <Upload size={14} />
             <span>1. Upload Source Content</span>
@@ -1601,7 +1607,7 @@ function RouteComponent() {
           )}
         </section>
 
-        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
+        <section className="rounded-3xl border border-border bg-card/70 p-3 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-4 md:p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               <FileText size={14} />
@@ -1610,7 +1616,7 @@ function RouteComponent() {
             <button
               type="button"
               onClick={runExtraction}
-              className="min-h-9 rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs text-foreground"
+              className="min-h-10 rounded-full border border-border bg-background/60 px-3 py-2 text-[11px] text-foreground"
             >
               Extract Locally
             </button>
@@ -1664,13 +1670,13 @@ function RouteComponent() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
+        <section className="rounded-3xl border border-border bg-card/70 p-3 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-4 md:p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               <Sparkles size={14} />
               <span>3. Output Options</span>
             </div>
-            <span className="rounded-full border border-border bg-background/60 px-3 py-1 text-xs text-muted-foreground">
+            <span className="rounded-full border border-border bg-background/60 px-3 py-1 text-[10px] text-muted-foreground sm:text-xs">
               Subject-aware options
             </span>
           </div>
@@ -1797,8 +1803,8 @@ function RouteComponent() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-border bg-card/70 p-5 shadow-[var(--shadow-elegant)] backdrop-blur md:p-6">
-          <div className="mb-5 text-xl font-semibold tracking-[0.02em] text-foreground md:text-2xl">4. Student Profile</div>
+        <section className="rounded-3xl border border-border bg-card/70 p-3 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-4 md:p-6">
+          <div className="mb-4 text-lg font-semibold tracking-[0.02em] text-foreground sm:text-xl md:text-2xl">4. Student Profile</div>
           <div className="space-y-7">
             {PROFILE_GROUPS.map((group) => {
               const Icon = group.icon;
@@ -1827,9 +1833,9 @@ function RouteComponent() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-border bg-card/70 p-5 shadow-[var(--shadow-elegant)] backdrop-blur md:p-6">
-          <div className="mb-5 text-xl font-semibold tracking-[0.02em] text-foreground md:text-2xl">5. Teaching Depth</div>
-          <div className="mb-5 space-y-7">
+        <section className="rounded-3xl border border-border bg-card/70 p-3 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-4 md:p-6">
+          <div className="mb-4 text-lg font-semibold tracking-[0.02em] text-foreground sm:text-xl md:text-2xl">5. Teaching Depth</div>
+          <div className="mb-4 space-y-5 sm:space-y-7">
             {DEPTH_GROUPS.map((group) => (
               <div key={group.heading} className="space-y-4">
                 <div className="text-lg font-semibold text-foreground md:text-xl">{group.heading}</div>
@@ -1876,7 +1882,7 @@ function RouteComponent() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
+        <section className="rounded-3xl border border-border bg-card/70 p-3 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-4 md:p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
               <Sparkles size={14} />
@@ -1886,7 +1892,7 @@ function RouteComponent() {
               type="button"
               onClick={buildPrompt}
               disabled={isBuildingPrompt}
-              className="rounded-2xl px-4 py-2 text-sm font-semibold text-primary-foreground"
+              className="min-h-10 rounded-2xl px-3 py-2 text-sm font-semibold text-primary-foreground sm:px-4"
               style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
             >
               <span className="inline-flex items-center gap-2">
@@ -1995,11 +2001,11 @@ function ExtractField({
 }) {
   return (
     <label className="rounded-2xl border border-border bg-background/50 p-3">
-      <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.18em] text-muted-foreground sm:text-[10px]">{label}</div>
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full bg-transparent text-sm text-foreground outline-none"
+        className="w-full bg-transparent text-[15px] text-foreground outline-none sm:text-sm"
       />
     </label>
   );
@@ -2016,12 +2022,12 @@ function ExtractListField({
 }) {
   return (
     <label className="rounded-2xl border border-border bg-background/50 p-3">
-      <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.18em] text-muted-foreground sm:text-[10px]">{label}</div>
       <textarea
         value={formatListInput(values)}
         onChange={(event) => onChange(parseListInput(event.target.value))}
         placeholder="One item per line"
-        className="min-h-24 w-full resize-y bg-transparent text-sm text-foreground outline-none"
+        className="min-h-24 w-full resize-y bg-transparent text-[15px] text-foreground outline-none sm:text-sm"
       />
     </label>
   );
@@ -2040,11 +2046,11 @@ function SelectField({
 }) {
   return (
     <label className="rounded-2xl border border-border bg-background/50 p-3">
-      <div className="mb-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.18em] text-muted-foreground sm:text-[10px]">{label}</div>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full bg-transparent text-sm text-foreground outline-none"
+        className="w-full bg-transparent text-[15px] text-foreground outline-none sm:text-sm"
       >
         {options.map((option) => (
           <option key={option} value={option} className="bg-background text-foreground">
@@ -2080,7 +2086,7 @@ function SelectionCard({
           onToggle();
         }
       }}
-      className={`flex min-h-14 w-full items-start gap-4 rounded-2xl border px-4 py-4 text-left transition duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] ${
+      className={`flex min-h-[3rem] w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] sm:min-h-14 sm:gap-4 sm:px-4 sm:py-4 ${
         checked
           ? "border-primary/55 bg-primary/12 text-foreground shadow-[var(--shadow-elegant)]"
           : "border-border bg-background/45 text-foreground/90"
@@ -2096,7 +2102,7 @@ function SelectionCard({
         <Check size={17} strokeWidth={3} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col justify-center">
-        <span className="text-[15px] font-semibold leading-6 text-foreground md:text-[16px] lg:text-[17px]">{label}</span>
+        <span className="text-[15px] font-semibold leading-5 text-foreground sm:text-[16px] sm:leading-6 md:text-[16px] lg:text-[17px]">{label}</span>
       </span>
     </button>
   );

@@ -119,6 +119,7 @@ export type FormulaExtraction = {
 
 export type ExtractedContent = {
   ocrText: string;
+  cleanedOcrText?: string;
   subject: string;
   board: string;
   classLevel: string;

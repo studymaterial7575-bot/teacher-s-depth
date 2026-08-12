@@ -46,6 +46,17 @@ type ImageMeta = {
   size: number;
 };
 
+type ExportArtifact = {
+  file: File;
+  kind: "pdf" | "cards";
+};
+
+type ExportStatus = {
+  kind: "pdf" | "cards";
+  tone: "loading" | "success" | "error";
+  message: string;
+};
+
 const EMPTY_ANALYSIS: TeachingImageAnalysisResult = {
   mainTopic: "",
   subtopics: [],
@@ -592,6 +603,282 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function isLikelyMobileBrowser() {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.matchMedia("(pointer: coarse)").matches;
+}
+
+async function triggerBrowserDownload(blob: Blob, fileName: string) {
+  if (!(blob instanceof Blob) || blob.size === 0) {
+    throw new Error("Generated file is empty.");
+  }
+
+  const url = URL.createObjectURL(blob);
+  const shouldUseMobileFallback = isLikelyMobileBrowser();
+
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.rel = "noopener noreferrer";
+    a.style.display = "none";
+    a.setAttribute("aria-hidden", "true");
+    if (shouldUseMobileFallback) {
+      a.target = "_blank";
+    }
+    document.body.appendChild(a);
+
+    try {
+      if (shouldUseMobileFallback) {
+        const opened = window.open(url, "_blank", "noopener,noreferrer");
+        if (!opened) {
+          a.click();
+        } else {
+          opened.opener = null;
+        }
+      } else {
+        a.click();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The browser blocked the automatic download.";
+      throw new Error(`The browser blocked the automatic download. ${message}`);
+    } finally {
+      a.remove();
+    }
+
+    await new Promise<void>((resolve) => {
+      window.setTimeout(() => resolve(), 400);
+    });
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 15000);
+  }
+}
+
+function makeFileFromBlob(blob: Blob, fileName: string, mimeType: string) {
+  return new File([blob], fileName, {
+    type: mimeType,
+    lastModified: Date.now(),
+  });
+}
+
+async function openFileInBrowser(file: File) {
+  const url = URL.createObjectURL(file);
+  try {
+    window.open(url, "_blank", "noopener,noreferrer");
+    await new Promise<void>((resolve) => {
+      setTimeout(() => resolve(), 1500);
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function shareFileWithBrowser(file: File) {
+  const nav = navigator as Navigator & {
+    canShare?: (data: ShareData) => boolean;
+    share?: (data: ShareData) => Promise<void>;
+  };
+
+  if (!nav.share) {
+    throw new Error("Share is not supported on this browser.");
+  }
+
+  const shareData: ShareData = {
+    files: [file],
+    title: file.name,
+    text: `Teacher's Depth export: ${file.name}`,
+  };
+
+  if (nav.canShare && !nav.canShare(shareData)) {
+    throw new Error("This browser cannot share the generated file.");
+  }
+
+  await nav.share(shareData);
+}
+
+async function renderTeachingCardBlob(card: TeachingCard, cardIndex: number, totalCards: number) {
+  const width = 1400;
+  const height = 900;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Canvas context is unavailable for card export.");
+  }
+
+  const bg = "#f8f5ef";
+  const accent = "#183a37";
+  const accentSoft = "#d8e3df";
+  const text = "#0f172a";
+  const muted = "#475569";
+
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = accent;
+  ctx.fillRect(0, 0, width, 120);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 42px Georgia";
+  ctx.fillText("Teacher's Depth Teaching Card", 50, 72);
+  ctx.font = "500 22px Arial";
+  ctx.fillText(`Card ${cardIndex + 1} of ${totalCards}`, 50, 102);
+
+  ctx.fillStyle = "#fffdf8";
+  ctx.strokeStyle = accentSoft;
+  ctx.lineWidth = 3;
+  ctx.fillRect(40, 145, width - 80, height - 200);
+  ctx.strokeRect(40, 145, width - 80, height - 200);
+
+  let y = 200;
+  const x = 70;
+  const maxWidth = width - 140;
+
+  ctx.fillStyle = accent;
+  ctx.font = "700 34px Arial";
+  y = wrapCanvasText(ctx, card.title || "Untitled", x, y, maxWidth, 42);
+
+  ctx.fillStyle = text;
+  ctx.font = "500 24px Arial";
+  y += 12;
+  y = wrapCanvasText(ctx, card.explanation || "No explanation available.", x, y, maxWidth, 34);
+
+  if (card.keyPoints.length > 0) {
+    y += 18;
+    ctx.fillStyle = accent;
+    ctx.font = "700 24px Arial";
+    ctx.fillText("Key Points", x, y);
+    y += 28;
+    ctx.fillStyle = text;
+    ctx.font = "500 22px Arial";
+    for (const point of card.keyPoints.slice(0, 8)) {
+      y = wrapCanvasText(ctx, `- ${point}`, x, y, maxWidth, 30);
+      if (y > height - 150) break;
+    }
+  }
+
+  const detailLines = [
+    card.formula ? `Formula: ${card.formula}` : "",
+    card.diagram ? `Diagram: ${card.diagram}` : "",
+    card.example ? `Example: ${card.example}` : "",
+    card.examImportance ? `Exam Importance: ${card.examImportance}` : "",
+    card.commonMistake ? `Common Mistake: ${card.commonMistake}` : "",
+  ].filter(Boolean);
+
+  if (detailLines.length > 0 && y < height - 120) {
+    y += 16;
+    ctx.fillStyle = muted;
+    ctx.font = "500 21px Arial";
+    for (const line of detailLines.slice(0, 4)) {
+      y = wrapCanvasText(ctx, line, x, y, maxWidth, 28);
+      if (y > height - 100) break;
+    }
+  }
+
+  ctx.fillStyle = accent;
+  ctx.font = "600 18px Arial";
+  ctx.fillText("Teacher's Depth - Classroom-ready export", 50, height - 32);
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Failed to encode card image."));
+        return;
+      }
+      resolve(blob);
+    }, "image/png");
+  });
+}
+
+async function renderTeachingCardsSheetBlob(cards: TeachingCard[]) {
+  const width = 1600;
+  const cardHeight = 620;
+  const gap = 30;
+  const height = Math.max(900, 80 + cards.length * (cardHeight + gap));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Canvas context is unavailable for teaching cards export.");
+  }
+
+  ctx.fillStyle = "#f8f5ef";
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = "#183a37";
+  ctx.fillRect(0, 0, width, 110);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 40px Georgia";
+  ctx.fillText("Teacher's Depth Teaching Cards", 50, 68);
+  ctx.font = "500 22px Arial";
+  ctx.fillText(`${cards.length} cards`, 50, 98);
+
+  let y = 145;
+  const cardWidth = width - 80;
+  for (let index = 0; index < cards.length; index += 1) {
+    const card = cards[index];
+    ctx.fillStyle = "#fffdf8";
+    ctx.strokeStyle = "#d8e3df";
+    ctx.lineWidth = 2;
+    ctx.fillRect(40, y, cardWidth, cardHeight);
+    ctx.strokeRect(40, y, cardWidth, cardHeight);
+
+    ctx.fillStyle = "#183a37";
+    ctx.fillRect(40, y, cardWidth, 46);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 24px Arial";
+    ctx.fillText(`Card ${index + 1}: ${card.title || "Untitled"}`, 58, y + 30);
+
+    let lineY = y + 82;
+    const maxWidth = cardWidth - 36;
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "500 22px Arial";
+    lineY = wrapCanvasText(ctx, card.explanation || "No explanation available.", 58, lineY, maxWidth, 30);
+
+    if (card.keyPoints.length > 0) {
+      lineY += 14;
+      ctx.fillStyle = "#183a37";
+      ctx.font = "700 22px Arial";
+      ctx.fillText("Key Points", 58, lineY);
+      lineY += 26;
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "500 20px Arial";
+      for (const point of card.keyPoints.slice(0, 5)) {
+        lineY = wrapCanvasText(ctx, `- ${point}`, 58, lineY, maxWidth, 28);
+      }
+    }
+
+    const detailLines = [
+      card.formula ? `Formula: ${card.formula}` : "",
+      card.diagram ? `Diagram: ${card.diagram}` : "",
+      card.example ? `Example: ${card.example}` : "",
+      card.examImportance ? `Exam Importance: ${card.examImportance}` : "",
+    ].filter(Boolean);
+
+    if (detailLines.length > 0) {
+      lineY += 12;
+      ctx.fillStyle = "#475569";
+      ctx.font = "500 19px Arial";
+      for (const line of detailLines.slice(0, 3)) {
+        lineY = wrapCanvasText(ctx, line, 58, lineY, maxWidth, 26);
+      }
+    }
+
+    y += cardHeight + gap;
+  }
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Failed to encode teaching cards image."));
+        return;
+      }
+      resolve(blob);
+    }, "image/png");
+  });
+}
+
 export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: MasterImageWorkflowProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -619,6 +906,11 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const [isCreatingCards, setIsCreatingCards] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isDownloadingCard, setIsDownloadingCard] = useState(false);
+  const [exportStatus, setExportStatus] = useState<ExportStatus | null>(null);
+  const [exportArtifact, setExportArtifact] = useState<ExportArtifact | null>(null);
+  const [showDownloadHelp, setShowDownloadHelp] = useState(false);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [workflowNotice, setWorkflowNotice] = useState<string | null>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
@@ -630,6 +922,11 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
 
   const hasCards = cards.length > 0;
   const hasAnalysis = analysis.mainTopic.trim().length > 0 || analysis.cards.length > 0;
+  const canShareExport = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void>; canShare?: (data: ShareData) => boolean };
+    return !!nav.share;
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -887,67 +1184,184 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
     }
   }
 
-  function onDownloadCards() {
-    if (!hasCards) return;
-    const blob = new Blob([JSON.stringify(cards, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `teaching-cards-${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
+  async function onDownloadCards() {
+    if (!hasCards || isDownloadingCard) return;
 
-  function onDownloadPdf() {
-    if (!hasCards) return;
-
-    const pdf = new jsPDF({ unit: "pt", format: "a4" });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const left = 40;
-    const right = pageWidth - 40;
-    const maxWidth = right - left;
-
-    cards.forEach((card, index) => {
-      if (index > 0) pdf.addPage();
-
-      let y = 48;
-
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(16);
-      pdf.text(`Card ${index + 1} of ${cards.length}`, left, y);
-
-      y += 24;
-      pdf.setFontSize(14);
-      pdf.text(card.title || "Untitled", left, y);
-
-      y += 20;
-      pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(11);
-
-      const lines = [
-        `Explanation: ${card.explanation || "-"}`,
-        card.formula ? `Formula: ${card.formula}` : "",
-        card.diagram ? `Diagram: ${card.diagram}` : "",
-        card.example ? `Example: ${card.example}` : "",
-        card.examImportance ? `Exam Importance: ${card.examImportance}` : "",
-        card.commonMistake ? `Common Mistake: ${card.commonMistake}` : "",
-        card.keyPoints.length > 0 ? `Key Points: ${card.keyPoints.join(" | ")}` : "",
-      ].filter(Boolean);
-
-      const wrapped = pdf.splitTextToSize(lines.join("\n\n"), maxWidth);
-      pdf.text(wrapped, left, y);
-
-      if (y + wrapped.length * 14 > pageHeight - 50) {
-        // Keep rendering simple and deterministic if card content is very long.
-        pdf.setFontSize(10);
-        pdf.text("Content truncated. Refer to exported JSON cards for full details.", left, pageHeight - 30);
-      }
+    setIsDownloadingCard(true);
+    setWorkflowError(null);
+    setWorkflowNotice(null);
+    setShowDownloadHelp(false);
+    setExportStatus({
+      kind: "cards",
+      tone: "loading",
+      message: "Generating teaching cards...",
     });
 
-    pdf.save(`teaching-deck-${Date.now()}.pdf`);
+    try {
+      if (cards.length === 0) {
+        throw new Error("Teaching cards are not available yet.");
+      }
+
+      const pngBlob = cards.length === 1
+        ? await renderTeachingCardBlob(cards[0], 0, 1)
+        : await renderTeachingCardsSheetBlob(cards);
+
+      if (pngBlob.size <= 0 || pngBlob.type !== "image/png") {
+        throw new Error("Teaching cards file could not be generated.");
+      }
+
+      const fileName = cards.length === 1
+        ? "Teacher-Depth-Teaching-Card.png"
+        : "Teacher-Depth-Teaching-Cards.png";
+      const exportFile = makeFileFromBlob(pngBlob, fileName, "image/png");
+
+      await triggerBrowserDownload(exportFile, fileName);
+      setExportArtifact({ file: exportFile, kind: "cards" });
+      setExportStatus({
+        kind: "cards",
+        tone: "success",
+        message: "Teaching Cards downloaded successfully.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Teaching cards generation failed. Please try again.";
+      console.error("Teaching cards export failed", error);
+      setWorkflowError(message);
+      setExportStatus({
+        kind: "cards",
+        tone: "error",
+        message: "Download could not be started. Please try again.",
+      });
+    } finally {
+      setIsDownloadingCard(false);
+    }
+  }
+
+  async function onDownloadPdf() {
+    if (!hasCards || isDownloadingPdf) return;
+
+    setIsDownloadingPdf(true);
+    setWorkflowError(null);
+    setWorkflowNotice(null);
+    setShowDownloadHelp(false);
+    setExportStatus({
+      kind: "pdf",
+      tone: "loading",
+      message: "Generating PDF...",
+    });
+
+    try {
+      const pdf = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const left = 40;
+      const right = pageWidth - 40;
+      const maxWidth = right - left;
+
+      cards.forEach((card, index) => {
+        if (index > 0) pdf.addPage();
+
+        let y = 48;
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(16);
+        pdf.text(`Card ${index + 1} of ${cards.length}`, left, y);
+
+        y += 24;
+        pdf.setFontSize(14);
+        pdf.text(card.title || "Untitled", left, y);
+
+        y += 20;
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(11);
+
+        const lines = [
+          `Explanation: ${card.explanation || "-"}`,
+          card.formula ? `Formula: ${card.formula}` : "",
+          card.diagram ? `Diagram: ${card.diagram}` : "",
+          card.example ? `Example: ${card.example}` : "",
+          card.examImportance ? `Exam Importance: ${card.examImportance}` : "",
+          card.commonMistake ? `Common Mistake: ${card.commonMistake}` : "",
+          card.keyPoints.length > 0 ? `Key Points: ${card.keyPoints.join(" | ")}` : "",
+        ].filter(Boolean);
+
+        const wrapped = pdf.splitTextToSize(lines.join("\n\n"), maxWidth);
+        pdf.text(wrapped, left, y);
+
+        if (y + wrapped.length * 14 > pageHeight - 50) {
+          // Keep rendering simple and deterministic if card content is very long.
+          pdf.setFontSize(10);
+          pdf.text("Content truncated. Refer to teaching cards for full details.", left, pageHeight - 30);
+        }
+      });
+
+      const pdfBlob = pdf.output("blob");
+      if (!(pdfBlob instanceof Blob) || pdfBlob.size === 0 || pdfBlob.type !== "application/pdf") {
+        throw new Error("PDF generation failed. Please try again.");
+      }
+
+      const exportFile = makeFileFromBlob(pdfBlob, "Teacher-Depth-Teaching.pdf", "application/pdf");
+
+      await triggerBrowserDownload(exportFile, "Teacher-Depth-Teaching.pdf");
+      setExportArtifact({ file: exportFile, kind: "pdf" });
+      setExportStatus({
+        kind: "pdf",
+        tone: "success",
+        message: "Teaching PDF downloaded successfully.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "PDF generation failed. Please try again.";
+      console.error("PDF export failed", error);
+      setWorkflowError(message);
+      setExportStatus({
+        kind: "pdf",
+        tone: "error",
+        message: "PDF generation failed. Please try again.",
+      });
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  }
+
+  async function onShareExportArtifact() {
+    if (!exportArtifact) return;
+
+    try {
+      await shareFileWithBrowser(exportArtifact.file);
+      setExportStatus((prev) => prev ? {
+        ...prev,
+        tone: "success",
+        message: `${exportArtifact.file.name} is ready to share from your browser or apps list.`,
+      } : prev);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unable to open share sheet.";
+      console.error("Export share failed", error);
+      setWorkflowError(message);
+      setExportStatus((prev) => prev ? {
+        ...prev,
+        tone: "error",
+        message: "Download could not be started. Please try again.",
+      } : prev);
+    }
+  }
+
+  async function onOpenExportArtifact() {
+    if (!exportArtifact) return;
+
+    try {
+      await openFileInBrowser(exportArtifact.file);
+      setExportStatus((prev) => prev ? {
+        ...prev,
+        tone: "success",
+        message: `${exportArtifact.file.name} opened in a new browser tab or window.`,
+      } : prev);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to open generated file.";
+      console.error("Open export artifact failed", error);
+      setWorkflowError(message);
+    }
   }
 
   const activeCard = hasCards ? cards[activeCardIndex] : null;
@@ -1275,26 +1689,83 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
           <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 8 - Export</div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <button
               type="button"
-              onClick={onDownloadPdf}
-              disabled={!hasCards}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm font-semibold text-foreground disabled:opacity-50"
+              onClick={() => void onDownloadPdf()}
+              disabled={!hasCards || isDownloadingPdf}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm font-semibold text-foreground disabled:opacity-50"
             >
-              <Download size={14} />
-              DOWNLOAD TEACHING PDF
+              {isDownloadingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              {isDownloadingPdf ? "GENERATING PDF..." : "DOWNLOAD TEACHING PDF"}
             </button>
             <button
               type="button"
-              onClick={onDownloadCards}
-              disabled={!hasCards}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm font-semibold text-foreground disabled:opacity-50"
+              onClick={() => void onDownloadCards()}
+              disabled={!hasCards || isDownloadingCard}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm font-semibold text-foreground disabled:opacity-50"
             >
-              <Download size={14} />
-              DOWNLOAD TEACHING CARDS
+              {isDownloadingCard ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              {isDownloadingCard ? "GENERATING TEACHING CARDS..." : "DOWNLOAD TEACHING CARDS"}
             </button>
           </div>
+
+          {exportStatus && (
+            <div
+              className={`mt-3 rounded-xl border px-3 py-3 text-sm break-words ${
+                exportStatus.tone === "error"
+                  ? "border-red-500/40 bg-red-500/10 text-red-100"
+                  : exportStatus.tone === "loading"
+                    ? "border-border bg-card/60 text-muted-foreground"
+                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+              }`}
+            >
+              <div className="font-medium">{exportStatus.message}</div>
+              {exportArtifact && exportStatus.tone === "success" && (
+                <div className="mt-2 text-xs">
+                  <div>File: {exportArtifact.file.name}</div>
+                  <div>MIME type: {exportArtifact.file.type}</div>
+                  <div>Size: {formatBytes(exportArtifact.file.size)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {exportArtifact && exportStatus?.tone === "success" && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDownloadHelp((prev) => !prev)}
+                className="rounded-xl border border-border bg-card/70 px-3 py-2 text-xs font-semibold text-foreground"
+              >
+                How to find the file
+              </button>
+              <button
+                type="button"
+                onClick={() => void onOpenExportArtifact()}
+                className="rounded-xl border border-border bg-card/70 px-3 py-2 text-xs font-semibold text-foreground"
+              >
+                Open file
+              </button>
+              {canShareExport && (
+                <button
+                  type="button"
+                  onClick={() => void onShareExportArtifact()}
+                  className="rounded-xl border border-border bg-card/70 px-3 py-2 text-xs font-semibold text-foreground"
+                >
+                  Save / Share
+                </button>
+              )}
+            </div>
+          )}
+
+          {showDownloadHelp && exportArtifact && (
+            <div className="mt-3 rounded-xl border border-border bg-card/60 px-3 py-3 text-xs text-foreground">
+              <div className="font-semibold">How to find the file</div>
+              <p className="mt-1">Open your phone's Files app -&gt; Downloads.</p>
+              <p className="mt-1">You can also check your browser menu -&gt; Downloads for {exportArtifact.file.name}.</p>
+            </div>
+          )}
         </div>
 
         {workflowError && (

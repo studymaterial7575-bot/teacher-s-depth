@@ -123,8 +123,22 @@ describe("academic extraction pipeline", () => {
     expect(items[0].subject).toBe("Physics");
     expect(items[0].topic).toBe("Light / Spherical Mirrors");
     expect(items[0].concept).toBe("Concave Mirror");
-    expect(items[0].board).toBe("Unknown");
+    expect(items[0].board).toBe("Not identified");
     expect(items[0].keywords).toEqual(expect.arrayContaining(["object", "focus", "curvature"]));
+  });
+
+  it("normalizes common OCR confusions before metadata inference", () => {
+    const text = [
+      "0bject in front of c0ncave mirror",
+      "mark f0cus and center of curvature",
+      "explain reflecti0n and 1mage formation",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+    expect(items).toHaveLength(1);
+    expect(items[0].subject).toBe("Physics");
+    expect(items[0].topic).toBe("Light / Spherical Mirrors");
+    expect(items[0].keywords).toEqual(expect.arrayContaining(["object", "focus", "curvature", "mirror"]));
   });
 
   it("normalizes OCR-corrupted mirror formula while preserving raw formula", () => {
