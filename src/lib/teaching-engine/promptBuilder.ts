@@ -1,4 +1,4 @@
-import { OUTPUT_OPTIONS, type PromptBuilderInput } from "@/types/teaching-engine";
+import { OUTPUT_OPTIONS, STUDENT_PROFILE_OPTIONS, type PromptBuilderInput } from "@/types/teaching-engine";
 
 export type InterestSignal = {
   kind: "ghost_story" | "unknown";
@@ -260,12 +260,14 @@ function buildSinglePrompt(input: PromptBuilderInput) {
     objective,
   } = input;
 
+  const safeProfile = studentProfile.filter((item): item is typeof item => STUDENT_PROFILE_OPTIONS.includes(item as any));
+  const safeSelectedOutputOptions = selectedOutputOptions.filter((item): item is typeof item => OUTPUT_OPTIONS.includes(item as any));
   const fileList = sourceFiles.length > 0 ? sourceFiles : ["No files attached"];
-  const profileList = studentProfile.length > 0
-    ? studentProfile.map((item) => `${item} (teacher override)`)
+  const profileList = safeProfile.length > 0
+    ? safeProfile.map((item) => `${item} (teacher override)`)
     : ["Auto / Not specified (no teacher override provided)"];
   const depthList = depthOptions.length > 0 ? depthOptions : ["Definition", "Worked examples"];
-  const outputOptions = selectedOutputOptions.length > 0 ? selectedOutputOptions : ["Normal Solution"];
+  const outputOptions = safeSelectedOutputOptions.length > 0 ? safeSelectedOutputOptions : ["Normal Solution"];
   const numberedOutputOptions = getNumberedOutputOptions(OUTPUT_OPTIONS).filter(({ name }) => outputOptions.includes(name as any));
   const objectiveLine = objective.trim() || "Generate a clear classroom-ready explanation for this learner.";
   const ocrPreview = extracted.ocrText.trim() || "No OCR text provided. Use extracted metadata and inferred chapter context.";

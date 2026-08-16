@@ -172,6 +172,90 @@ describe("academic extraction pipeline", () => {
     expect(items[0].ocrText).not.toContain("87%");
   });
 
+  it("does not split concave and convex concept headings into separate questions", () => {
+    const text = [
+      "Physics",
+      "Topic: Spherical Mirrors",
+      "There are two types of spherical mirrors:",
+      "1. Concave mirror",
+      "2. Convex mirror",
+      "Important terms:",
+      "Pole (P)",
+      "Centre of curvature (C)",
+      "Example: If the focal length is 15 cm, find its radius of curvature.",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+    expect(items).toHaveLength(1);
+    expect(items[0].subject).toBe("Physics");
+    expect(items[0].topic).toBe("Spherical Mirrors");
+    expect(items[0].ocrText).toContain("Example: If the focal length is 15 cm, find its radius of curvature.");
+    expect(items[0].ocrText).not.toContain("1. Concave mirror");
+    expect(items[0].ocrText).not.toContain("2. Convex mirror");
+  });
+
+  it("keeps the live OCR spherical mirror source as one genuine question and no false concept blocks", () => {
+    const source = [
+      "CBSE CLASS 10 – PHYSICS",
+      "",
+      "Chapter: Light – Reflection and Refraction",
+      "",
+      "Topic: Spherical Mirrors",
+      "",
+      "A spherical mirror is a part of a hollow sphere.",
+      "",
+      "There are two types of spherical mirrors:",
+      "1. Concave mirror",
+      "2. Convex mirror",
+      "",
+      "Important terms:",
+      "• Pole (P)",
+      "• Centre of curvature (C)",
+      "• Radius of curvature (R)",
+      "• Principal focus (F)",
+      "• Focal length (f)",
+      "",
+      "For a spherical mirror:",
+      "",
+      "R = 2f",
+      "",
+      "Example:",
+      "If the focal length of a concave mirror is 15 cm, find its radius of curvature.",
+      "",
+      "Given:",
+      "f = 15 cm",
+      "",
+      "Formula:",
+      "R = 2f",
+      "",
+      "Therefore:",
+      "R = 2 × 15",
+      "R = 30 cm",
+      "",
+      "Answer: Radius of curvature = 30 cm",
+      "",
+      "Quick revision:",
+      "• Concave mirror can form real or virtual images.",
+      "• Convex mirror forms a virtual, erect and diminished image.",
+      "• R = 2f",
+      "",
+      "Common mistake:",
+      "Do not confuse focal length with radius of curvature.",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(source);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].subject).toBe("Physics");
+    expect(items[0].topic).toContain("Spherical Mirrors");
+    expect(items[0].ocrText).toContain("1. concave mirror");
+    expect(items[0].ocrText).toContain("2. convex mirror");
+    expect(items[0].ocrText).toContain("Important terms:");
+    expect(items[0].ocrText).toContain("R = 2f");
+    expect(items[0].ocrText).toContain("If the focal length of a concave mirror is 15 cm, find its radius of curvature.");
+    expect(items.some((item) => item.ocrText.includes("1. concave mirror") && item.ocrText.includes("2. convex mirror") && item.ocrText.includes("Important terms:") && item.ocrText.includes("R = 2f"))).toBe(true);
+  });
+
   it("returns Unknown on low-confidence OCR", () => {
     const text = "blurry zxqv text random letters";
     const items = extractAcademicQuestions(text);
@@ -214,6 +298,249 @@ describe("academic extraction pipeline", () => {
     expect(prompts[0]).toContain("SOURCE CONTENT ONLY");
     expect(prompts[0]).toContain("IMPORTANT ADDITIONAL EXAM COVERAGE");
     expect(prompts[0]).toContain("Do not reuse previous teaching context");
+  });
+
+  it("uses only the current user selections in the generated prompt", () => {
+    const text = [
+      "Physics - Linear Equations - Solve 2x + 5 = 13.",
+      "Physics - Light / Spherical Mirrors - Explain image formation.",
+    ].join("\n");
+    const items = extractAcademicQuestions(text);
+
+    const prompt = buildPromptTexts({
+      sourceFiles: ["Image: selection-test.png"],
+      extracted: items[0],
+      extractedItems: items,
+      studentProfile: ["Average", "Step-by-step explanation", "Exam preparation"],
+      depthOptions: depth,
+      selectedOutputOptions: ["Normal Solution", "Formula Breakdown", "Practice Questions", "Create Teaching Image"],
+      visualStyle: visual,
+      explanationStyle: explanation,
+      objective: "Generate classroom-ready output.",
+    })[0];
+
+    expect(prompt).toContain("Average (teacher override)");
+    expect(prompt).toContain("Step-by-step explanation (teacher override)");
+    expect(prompt).toContain("Exam preparation (teacher override)");
+    expect(prompt).not.toContain("Very weak");
+    expect(prompt).not.toContain("Visual learner");
+    expect(prompt).toContain("Formula Breakdown");
+    expect(prompt).toContain("Practice Questions");
+    expect(prompt).toContain("Create Teaching Image");
+    expect(prompt).not.toContain("Background");
+    expect(prompt).not.toContain("Logical Flow");
+  });
+
+  it("keeps fresh-run metadata isolated from stale or previous subject data", () => {
+    const stale = {
+      ocrText: "Linear Equations solve x + 3 = 9.",
+      cleanedOcrText: "Linear Equations solve x + 3 = 9.",
+      subject: "Linear Equations",
+      board: "CBSE",
+      classLevel: "Class 10",
+      chapter: "Algebra",
+      topic: "Linear Equations",
+      concept: "Equation solving",
+      questionType: "Numerical/Problem",
+      questionTypes: ["Numerical/Problem"],
+      language: "English",
+      hasTables: false,
+      hasExercises: false,
+      examImportance: "Past-paper frequency unavailable.",
+      formulae: [],
+      numericalQuestions: ["Solve x + 3 = 9."],
+      diagrams: [],
+      keywords: ["equation", "solve", "x"],
+    };
+
+    const current = {
+      ocrText: "Light / Spherical Mirrors explain image formation for a concave mirror.",
+      cleanedOcrText: "Light / Spherical Mirrors explain image formation for a concave mirror.",
+      subject: "Physics",
+      board: "Unknown",
+      classLevel: "Class 10",
+      chapter: "Light - Reflection and Refraction",
+      topic: "Light / Spherical Mirrors",
+      concept: "Concave Mirror",
+      questionType: "Concept Explanation",
+      questionTypes: ["Concept Explanation"],
+      language: "English",
+      hasTables: false,
+      hasExercises: false,
+      examImportance: "Past-paper frequency unavailable.",
+      formulae: ["1/f = 1/v + 1/u"],
+      numericalQuestions: [],
+      diagrams: ["ray diagram"],
+      keywords: ["mirror", "focus", "image"],
+    };
+
+    const prompts = buildPromptTexts({
+      sourceFiles: ["Image: fresh-run.png"],
+      extracted: stale,
+      extractedItems: [current],
+      studentProfile: ["Average"],
+      depthOptions: depth,
+      selectedOutputOptions: ["Normal Solution", "Practice Questions"],
+      visualStyle: visual,
+      explanationStyle: explanation,
+      objective: "Generate classroom-ready output.",
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("Subject: Physics");
+    expect(prompts[0]).toContain("Topic: Light / Spherical Mirrors");
+    expect(prompts[0]).not.toContain("Linear Equations");
+    expect(prompts[0]).not.toContain("Equation solving");
+  });
+
+  it("keeps question-by-question metadata isolated in multi-question OCR", () => {
+    const text = [
+      "Physics - Linear Equations - Solve 2x + 5 = 13.",
+      "Physics - Light / Spherical Mirrors - Explain image formation in a concave mirror.",
+    ].join("\n");
+    const items = extractAcademicQuestions(text);
+
+    const prompts = buildPromptTexts({
+      sourceFiles: ["Image: multi-question.png"],
+      extracted: items[0],
+      extractedItems: items,
+      studentProfile: ["Average"],
+      depthOptions: depth,
+      selectedOutputOptions: ["Normal Solution", "Logical Flow"],
+      visualStyle: visual,
+      explanationStyle: explanation,
+      objective: "Generate classroom-ready output.",
+    });
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("Topic: Linear Equations");
+    expect(prompts[0]).not.toContain("Light / Spherical Mirrors");
+    expect(prompts[1]).toContain("Topic: Light / Spherical Mirrors");
+    expect(prompts[1]).not.toContain("Linear Equations");
+  });
+
+  it("matches the CBSE spherical mirror source, selection, and isolation requirements", () => {
+    const source = [
+      "CBSE CLASS 10 – PHYSICS",
+      "",
+      "Chapter: Light – Reflection and Refraction",
+      "",
+      "Topic: Spherical Mirrors",
+      "",
+      "A spherical mirror is a part of a hollow sphere.",
+      "",
+      "There are two types of spherical mirrors:",
+      "1. Concave mirror",
+      "2. Convex mirror",
+      "",
+      "Important terms:",
+      "• Pole (P)",
+      "• Centre of curvature (C)",
+      "• Radius of curvature (R)",
+      "• Principal focus (F)",
+      "• Focal length (f)",
+      "",
+      "For a spherical mirror:",
+      "",
+      "R = 2f",
+      "",
+      "Example:",
+      "If the focal length of a concave mirror is 15 cm, find its radius of curvature.",
+      "",
+      "Given:",
+      "f = 15 cm",
+      "",
+      "Formula:",
+      "R = 2f",
+      "",
+      "Therefore:",
+      "R = 2 × 15",
+      "R = 30 cm",
+      "",
+      "Answer: Radius of curvature = 30 cm",
+      "",
+      "Quick revision:",
+      "• Concave mirror can form real or virtual images.",
+      "• Convex mirror forms a virtual, erect and diminished image.",
+      "• R = 2f",
+      "",
+      "Common mistake:",
+      "Do not confuse focal length with radius of curvature.",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(source);
+    expect(items.length).toBeGreaterThan(0);
+    expect(items[0].subject).toBe("Physics");
+    expect(items[0].board).toBe("CBSE");
+    expect(items[0].classLevel).toBe("Class 10");
+    expect(items[0].chapter).toContain("Light");
+    expect(items[0].topic).toContain("Spherical Mirrors");
+    expect(items[0].formulae.join(" | ")).toContain("R = 2f");
+    expect(items[0].numericalQuestions.join(" ")).toContain("f = 15 cm");
+
+    const prompt = buildPromptTexts({
+      sourceFiles: ["Image: spherical-mirrors.png"],
+      extracted: items[0],
+      extractedItems: items,
+      studentProfile: ["Very weak", "Step-by-step explanation", "Exam preparation"],
+      depthOptions: ["Definition", "Worked examples", "Common mistakes", "Revision notes"],
+      selectedOutputOptions: [
+        "Normal Solution",
+        "Formula Breakdown",
+        "Common Mistakes",
+        "Practice Questions",
+        "Revision Notes",
+        "Create Teaching Image",
+      ],
+      visualStyle: "Simple labeled diagram",
+      explanationStyle: "Simple classroom language",
+      objective: "Generate classroom-ready output.",
+    })[0];
+
+    const profileSection = prompt.split("STUDENT PROFILE:")[1]?.split("TEACHING DEPTH REQUIRED:")[0] ?? "";
+
+    expect(profileSection).toContain("Very weak (teacher override)");
+    expect(profileSection).toContain("Step-by-step explanation (teacher override)");
+    expect(profileSection).toContain("Exam preparation (teacher override)");
+    expect(profileSection).not.toContain("Average");
+    expect(profileSection).not.toContain("Advanced");
+    expect(profileSection).not.toContain("Visual learner");
+    expect(profileSection).not.toContain("Quick revision");
+    expect(profileSection).not.toContain("Deep understanding");
+    expect(profileSection).not.toContain("Student finds subject boring");
+    expect(profileSection).not.toContain("Formula background");
+    expect(profileSection).not.toContain("Teacher mode");
+    expect(profileSection).not.toContain("Parent mode");
+
+    expect(prompt).toContain("Normal Solution");
+    expect(prompt).toContain("Formula Breakdown");
+    expect(prompt).toContain("Common Mistakes");
+    expect(prompt).toContain("Practice Questions");
+    expect(prompt).toContain("Revision Notes");
+    expect(prompt).toContain("Create Teaching Image");
+    expect(prompt).not.toContain("Background");
+    expect(prompt).not.toContain("Logical Flow");
+    expect(prompt).not.toContain("Visual Explanation");
+    expect(prompt).not.toContain("Real-life Analogy");
+    expect(prompt).not.toContain("Exam Importance");
+    expect(prompt).not.toContain("Memory Tricks");
+    expect(prompt).not.toContain("Word Meanings");
+    expect(prompt).not.toContain("Grammar Explanation");
+
+    expect(prompt).not.toContain("Linear Equations");
+    expect(prompt).not.toContain("x + 7 = 15");
+    expect(prompt).not.toContain("2x + 5 = 17");
+    expect(prompt).not.toContain("3x - 7 = 11");
+    expect(prompt).not.toContain("Algebra");
+
+    expect(prompt).toContain("SECTION 1: Normal Solution");
+    expect(prompt).toContain("SECTION 2: Scrollable Deep Learning Section");
+    expect(prompt).toContain("SECTION 3: Create Teaching Image");
+
+    expect(prompt).toContain("Spherical Mirrors");
+    expect(prompt).toContain("Light - Reflection and Refraction");
+    expect(prompt).not.toContain("Linear Equations");
+    expect(prompt).not.toContain("x + 3 = 9");
   });
 
   it("detects ghost story interest and produces a classroom-safe research prompt", () => {

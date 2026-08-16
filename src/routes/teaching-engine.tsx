@@ -321,6 +321,33 @@ function getRelevantOutputOptions(subject: string) {
   return SELECTABLE_OUTPUT_OPTIONS;
 }
 
+function deduplicateOcrTextBlocks(text: string) {
+  if (!text.trim()) return "";
+
+  const blocks = text
+    .split(/\n\s*\n+/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const block of blocks) {
+    const normalized = block
+      .toLowerCase()
+      .replace(/[\u2022\u2023\u25E6\u2043\u2219]/g, " ")
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(block);
+  }
+
+  return deduped.join("\n\n").trim();
+}
+
 function inferSubject(text: string) {
   const lower = normalize(text);
   for (const rule of SUBJECT_RULES) {
@@ -1161,6 +1188,14 @@ function RouteComponent() {
 
     clearTeachingRunDerivedState();
     void clearMasterTeachingImage();
+    setExtracted(DEFAULT_EXTRACTED);
+    setExtractedItems([]);
+    setStudentProfile(DEFAULT_STUDENT_PROFILE);
+    setDepthOptions(DEFAULT_DEPTH_OPTIONS);
+    setSelectedOutputOptions(DEFAULT_OUTPUT_OPTIONS);
+    setOutputSelectionMode("auto");
+    setVisualStyle(DEFAULT_VISUAL_STYLE);
+    setExplanationStyle(DEFAULT_EXPLANATION_STYLE);
     setPrompt("");
     setWorkflowStep("upload");
 
@@ -1203,9 +1238,19 @@ function RouteComponent() {
       }
 
       const mergedText = extractedTextParts.join("\n\n").trim();
-      if (mergedText) {
-        setOcrText(mergedText);
-        const nextItems = extractAcademicQuestions(mergedText);
+      const freshText = deduplicateOcrTextBlocks(mergedText);
+      if (freshText) {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(STORAGE_KEYS.teachingEngineOcrText);
+          window.localStorage.removeItem(STORAGE_KEYS.teachingEngineExtracted);
+          window.localStorage.removeItem(STORAGE_KEYS.teachingEngineExtractedItems);
+        }
+
+        setExtracted(DEFAULT_EXTRACTED);
+        setExtractedItems([]);
+        setOcrText(freshText);
+
+        const nextItems = extractAcademicQuestions(freshText);
         const actionableItems = getActionableExtractedItems(nextItems);
         if (actionableItems.length > 0) {
           setExtractedItems(nextItems);
@@ -1291,7 +1336,19 @@ function RouteComponent() {
 
   function runExtraction() {
     setWorkflowStep("ocr");
-    const nextItems = extractAcademicQuestions(ocrText);
+
+    const freshText = deduplicateOcrTextBlocks(ocrText);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(STORAGE_KEYS.teachingEngineOcrText);
+      window.localStorage.removeItem(STORAGE_KEYS.teachingEngineExtracted);
+      window.localStorage.removeItem(STORAGE_KEYS.teachingEngineExtractedItems);
+    }
+
+    setExtracted(DEFAULT_EXTRACTED);
+    setExtractedItems([]);
+    setOcrText(freshText);
+
+    const nextItems = extractAcademicQuestions(freshText);
     const actionableItems = getActionableExtractedItems(nextItems);
     if (actionableItems.length > 0) {
       setExtractedItems(nextItems);
@@ -1352,14 +1409,15 @@ function RouteComponent() {
       }
 
       const nextExtractedItems = actionableExtractedItems.length > 0
-        ? [{
-            ...actionableExtractedItems[0],
-            ...extracted,
-            ocrText,
-          }, ...actionableExtractedItems.slice(1)]
+        ? actionableExtractedItems.map((item) => ({
+            ...item,
+            ocrText: item.ocrText || ocrText || "",
+            cleanedOcrText: item.cleanedOcrText ?? (item.ocrText || ocrText || ""),
+          }))
         : [{
             ...extracted,
-            ocrText,
+            ocrText: ocrText || extracted.ocrText || "",
+            cleanedOcrText: extracted.cleanedOcrText ?? (extracted.ocrText || ocrText || ""),
           }];
 
       const nextPrompts = buildPromptTexts({

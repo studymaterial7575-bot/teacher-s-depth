@@ -171,16 +171,76 @@ function normalizeOcrForAnalysis(text: string) {
   return lines.filter(Boolean).join("\n");
 }
 
+function isConceptLabelOnly(text: string) {
+  const trimmed = normalize(text).trim();
+  if (!trimmed) return false;
+
+  const actionWords = /\b(find|calculate|solve|evaluate|determine|compute|derive|prove|show|explain|describe|compare|differentiate|distinguish|state|define|name|list|draw|label|sketch|identify|classify|write|convert|why|how|what is|which of)\b/i;
+  if (actionWords.test(trimmed)) return false;
+
+  if (/^(concave|convex|mirror|pole|focus|centre of curvature|center of curvature|radius of curvature|focal length|principal axis|object|image|formula|example|important terms|quick revision|common mistake|definition|topic|chapter|heading|note)\b/i.test(trimmed)) {
+    return true;
+  }
+
+  return /\b(concave|convex|mirror|pole|focus|centre|center|curvature|radius|focal length|principal axis|object|image|formula|example|important|revision|definition)\b/i.test(trimmed) &&
+    /\b(topic|chapter|important terms|quick revision|common mistake|formula|example|definition|note)\b/i.test(trimmed);
+}
+
+function looksLikeQuestionText(text: string) {
+  const normalized = normalize(text).replace(/^[\d\s\-.):]+/, "").trim();
+  if (!normalized) return false;
+
+  if (isConceptLabelOnly(normalized)) return false;
+
+  if (/\b(question|exercise|worksheet|assignment|homework|mcq|objective|problem|numerical|derivation|practice|example)\b/i.test(normalized)) {
+    return true;
+  }
+
+  if (/\b(find|calculate|solve|evaluate|determine|compute|derive|prove|show|explain|describe|compare|differentiate|distinguish|state|define|name|list|draw|label|sketch|identify|classify|write|convert|why|how|what is|which of)\b/i.test(normalized)) {
+    return true;
+  }
+
+  return false;
+}
+
 function isBoundaryLine(line: string) {
   const lower = normalize(line);
   if (/^(test|question|q)\s*\d+/i.test(line)) return true;
-  if (/^\d+[).:-]\s*/.test(line)) return true;
   if (/\b(test|question)\s*\d+\b/.test(lower)) return true;
   if (/^(physics|biology|chemistry|history|geography|mathematics|math|english)\b/i.test(line)) return true;
+  if (/^(important terms|quick revision|common mistake|example|given|formula|therefore|answer|topic|chapter)\b/i.test(line)) return false;
+  if (/^\d+[).:-]\s*/.test(line)) {
+    const remainder = line.replace(/^\d+[).:-]\s*/, "").trim();
+    if (isConceptLabelOnly(remainder)) return false;
+    return looksLikeQuestionText(remainder) || /\b(question|exercise|problem|mcq|find|calculate|solve|derive|explain|describe)\b/i.test(remainder);
+  }
   if (line.includes(" - ")) {
     return /\b(physics|biology|chemistry|history|geography|mathematics|math|english)\b/i.test(line);
   }
   return false;
+}
+
+function normalizeForDuplicateCheck(text: string) {
+  return normalize(text)
+    .replace(/[*•·•]/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function deduplicateBlocks(blocks: string[]) {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const block of blocks) {
+    const normalized = normalizeForDuplicateCheck(block);
+    if (!normalized) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    deduped.push(block.trim());
+  }
+
+  return deduped;
 }
 
 function splitIntoQuestionBlocks(text: string) {
@@ -204,7 +264,7 @@ function splitIntoQuestionBlocks(text: string) {
     blocks.push(current.join("\n").trim());
   }
 
-  const compact = blocks.filter((block) => block.length > 0);
+  const compact = deduplicateBlocks(blocks.filter((block) => block.length > 0));
   if (compact.length === 0) return [cleaned];
 
   return compact;
@@ -272,6 +332,28 @@ function detectClassLevel(text: string) {
   return { value: NOT_IDENTIFIED, confidence: 0.3 };
 }
 
+function normalizeExplicitMetadataTitle(value: string) {
+  const normalized = value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\s*[-–—]\s*/g, " - ");
+
+  return normalized
+    .split(/\s+/)
+    .map((word) => {
+      const lowerWord = word.toLowerCase();
+      if (["and", "or", "of", "a", "an", "the"].includes(lowerWord)) return lowerWord;
+      if (lowerWord === "i") return "I";
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ")
+    .replace(/\bAnd\b/g, "and")
+    .replace(/\bOf\b/g, "of")
+    .replace(/\bA\b/g, "a")
+    .replace(/\bAn\b/g, "an")
+    .replace(/\bThe\b/g, "the");
+}
+
 function detectTopicAndChapter(segment: string, subject: string) {
   const explicitTopic = segment.match(/\btopic\s*[:\-]?\s*([^\n.]+)/i)?.[1]?.trim();
   const explicitChapter = segment.match(/\bchapter\s*[:\-]?\s*([^\n.]+)/i)?.[1]?.trim();
@@ -287,7 +369,7 @@ function detectTopicAndChapter(segment: string, subject: string) {
   })();
 
   const validExplicitChapter = explicitChapter && !GENERIC_CHAPTER_WORDS.has(explicitChapter.toLowerCase())
-    ? explicitChapter
+    ? normalizeExplicitMetadataTitle(explicitChapter)
     : undefined;
 
   if (explicitTopic) {
@@ -344,9 +426,26 @@ function detectTopicAndChapter(segment: string, subject: string) {
     }
   }
 
-  const dashed = segment.split(/\s[-–:]\s/).map((part) => part.trim()).filter(Boolean);
-  if (dashed.length >= 2) {
+  const dashed = segment.split(/\s*[-–:]\s*/).map((part) => part.trim()).filter(Boolean);
+  if (dashed.length >= 3) {
+    const first = dashed[0];
+    const middle = dashed[1];
     const tail = dashed[dashed.length - 1];
+    const isLikelySubject = Object.keys(SUBJECT_RULES).some((subjectName) =>
+      new RegExp(`\\b${subjectName.toLowerCase()}\\b`, "i").test(first.toLowerCase()),
+    );
+
+    if (isLikelySubject && middle.length > 2 && !/^\d+$/.test(middle) && !/\b(explain|solve|calculate|derive|state|write|show|answer|question)\b/i.test(middle)) {
+      return {
+        topic: middle,
+        chapter: validExplicitChapter ?? UNKNOWN,
+        concept: mirrorConcept ?? UNKNOWN,
+        topicConfidence: 0.76,
+        chapterConfidence: validExplicitChapter ? 0.86 : 0.45,
+        conceptConfidence: mirrorConcept ? 0.84 : 0.3,
+      };
+    }
+
     if (tail.length > 3) {
       return {
         topic: tail,
@@ -525,8 +624,8 @@ function extractFormulaCandidates(segment: string) {
     const line = lines[idx];
     const lower = line.toLowerCase();
     const isFormulaLike =
-      /([A-Za-z][A-Za-z0-9_]*\s*=\s*[^=].*|\b\d+\s*\/\s*[A-Za-z]\b|\b[A-Za-z]+\s*\+\s*[A-Za-z]+\s*(->|→)\s*[A-Za-z]+|\bV\s*=\s*I\s*R\b)/i.test(line) ||
-      /\b(mirror formula|magnification|focal length)\b/i.test(lower);
+      /(?:[A-Za-z][A-Za-z0-9_]*\s*=\s*[^=].+|\b\d+\s*\/\s*[A-Za-z]\b|\b[A-Za-z]+\s*\+\s*[A-Za-z]+\s*(->|→)\s*[A-Za-z]+|\bV\s*=\s*I\s*R\b)/i.test(line) ||
+      /\b(mirror formula|magnification|focal length|r\s*=\s*2f|f\s*=\s*\d+\s*cm)\b/i.test(lower);
 
     if (isFormulaLike) {
       candidates.add(line);
@@ -579,7 +678,12 @@ function extractNumericalQuestions(segment: string) {
   return segment
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => /\d/.test(line) && /\b(calculate|find|solve|evaluate|determine|what is|compute)\b/i.test(line));
+    .filter((line) => {
+      if (!line || !/\d/.test(line)) return false;
+      if (/\b(calculate|find|solve|evaluate|determine|what is|compute)\b/i.test(line)) return true;
+      if (/\b[a-z]\s*=\s*\d+.*|\b\d+\s*(?:cm|m|kg|g|s|v|a|n|w)\b/i.test(line)) return true;
+      return /\b(?:r|f|v|u|m)\s*=\s*\d+/i.test(line);
+    });
 }
 
 function extractDiagramPrompts(segment: string) {
@@ -629,7 +733,28 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
   const blocks = splitIntoQuestionBlocks(cleanedForAnalysis);
   const cleanedFormulaDetails = extractFormulaeDetailed(cleanedForAnalysis);
 
-  const questions = blocks.map((block) => {
+  const questionBlocks = blocks.length === 1
+    ? blocks.filter((block) => {
+        if (!block || !block.trim()) return false;
+        if (isConceptLabelOnly(block)) return false;
+        return true;
+      })
+    : blocks.filter((block) => {
+        if (!block || !block.trim()) return false;
+        if (isConceptLabelOnly(block)) return false;
+
+        const normalizedBlock = normalize(block);
+        if (/\b(question|exercise|worksheet|assignment|homework|mcq|objective|problem|numerical|derivation|practice|example|find|calculate|solve|evaluate|determine|compute|derive|prove|show|explain|describe|compare|differentiate|distinguish|state|define|name|list|draw|label|sketch|identify|classify|write|convert|why|how|what is|which of)\b/i.test(normalizedBlock)) {
+          return true;
+        }
+
+        if (/(^|\n)(test|question|q)\s*\d+/i.test(block)) return true;
+        if (/\b(test|question)\s*\d+\b/i.test(block)) return true;
+
+        return false;
+      });
+
+  const questions = questionBlocks.map((block) => {
     const subjectGuess = detectSubject(block);
     const topicAndChapter = detectTopicAndChapter(block, subjectGuess.subject);
     const questionType = detectQuestionType(block);
