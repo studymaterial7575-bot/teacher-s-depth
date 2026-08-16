@@ -614,7 +614,6 @@ async function triggerBrowserDownload(blob: Blob, fileName: string) {
   }
 
   const url = URL.createObjectURL(blob);
-  const shouldUseMobileFallback = isLikelyMobileBrowser();
 
   try {
     const a = document.createElement("a");
@@ -623,22 +622,11 @@ async function triggerBrowserDownload(blob: Blob, fileName: string) {
     a.rel = "noopener noreferrer";
     a.style.display = "none";
     a.setAttribute("aria-hidden", "true");
-    if (shouldUseMobileFallback) {
-      a.target = "_blank";
-    }
+    a.target = "_self";
     document.body.appendChild(a);
 
     try {
-      if (shouldUseMobileFallback) {
-        const opened = window.open(url, "_blank", "noopener,noreferrer");
-        if (!opened) {
-          a.click();
-        } else {
-          opened.opener = null;
-        }
-      } else {
-        a.click();
-      }
+      a.click();
     } catch (error) {
       const message = error instanceof Error ? error.message : "The browser blocked the automatic download.";
       throw new Error(`The browser blocked the automatic download. ${message}`);
@@ -650,7 +638,7 @@ async function triggerBrowserDownload(blob: Blob, fileName: string) {
       window.setTimeout(() => resolve(), 400);
     });
   } finally {
-    window.setTimeout(() => URL.revokeObjectURL(url), 15000);
+    window.setTimeout(() => URL.revokeObjectURL(url), 45000);
   }
 }
 
@@ -1246,7 +1234,7 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
     setExportStatus({
       kind: "pdf",
       tone: "loading",
-      message: "Generating PDF...",
+      message: "Preparing PDF...",
     });
 
     try {
@@ -1306,7 +1294,7 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       setExportStatus({
         kind: "pdf",
         tone: "success",
-        message: "Teaching PDF downloaded successfully.",
+        message: "PDF ready — Download",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "PDF generation failed. Please try again.";

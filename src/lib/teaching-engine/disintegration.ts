@@ -9,11 +9,59 @@ const REQUIRED_CARD_PATTERNS = [
   /exam|revision|summary|checklist/i,
 ];
 
+const INTERNAL_GENERATION_DIRECTIVES = [
+  /create a single comprehensive educational infographic/i,
+  /add one application prompt/i,
+  /add one reasoning prompt/i,
+  /add one recall check/i,
+  /label it as additional coverage/i,
+  /use a simple labelled classroom diagram/i,
+  /work through one guided example/i,
+  /simple labelled visual/i,
+  /write the known values, substitute into the formula, solve carefully, and state the final answer/i,
+  /show the reasoning step by step/i,
+  /check units and final result before concluding/i,
+  /state the source-based idea clearly/i,
+  /avoid mixing in unstated information/i,
+  /add one application question/i,
+  /ask one reasoning question/i,
+  /include one quick recall check/i,
+  /use only source-supported ideas/i,
+  /explain what each variable means and how to use the formula/i,
+];
+
 function firstNonEmpty(...values: Array<string | undefined>) {
   for (const value of values) {
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
   }
   return "";
+}
+
+function sanitizeTeachingLine(value: string, fallback: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return fallback;
+  if (INTERNAL_GENERATION_DIRECTIVES.some((pattern) => pattern.test(normalized))) {
+    return fallback;
+  }
+  return normalized;
+}
+
+function buildFormulaSummary(formula: string, meaning?: string) {
+  const normalizedFormula = formula.trim();
+  const safeMeaning = sanitizeTeachingLine(
+    meaning || "",
+    "Explain the relationship between the main quantities in this topic.",
+  );
+
+  if (!normalizedFormula) {
+    return safeMeaning;
+  }
+
+  if (/\bV\b.*\bI\b.*\bR\b/i.test(normalizedFormula) || /\bI\b.*\bR\b.*\bV\b/i.test(normalizedFormula)) {
+    return "V = potential difference; I = current; R = resistance. The relationship shows that voltage increases with current when resistance stays constant.";
+  }
+
+  return `${normalizedFormula} — ${safeMeaning}`;
 }
 
 function normalizeCardTitle(value: string) {
@@ -23,8 +71,11 @@ function normalizeCardTitle(value: string) {
 function makeCard(title: string, explanation: string, keyPoints: string[], extra: Partial<TeachingCard> = {}): TeachingCard {
   return {
     title: normalizeCardTitle(title),
-    explanation: explanation.trim() || "Core teaching content for this topic.",
-    keyPoints: keyPoints.filter(Boolean).slice(0, 8),
+    explanation: sanitizeTeachingLine(explanation, "Core teaching content for this topic."),
+    keyPoints: keyPoints
+      .map((point) => sanitizeTeachingLine(point, "Key idea for this topic."))
+      .filter(Boolean)
+      .slice(0, 8),
     ...extra,
   };
 }
@@ -34,18 +85,29 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
   const cards: TeachingCard[] = existing.map((card) => ({
     ...card,
     title: normalizeCardTitle(card.title),
-    explanation: card.explanation || "Core teaching content for this topic.",
-    keyPoints: Array.isArray(card.keyPoints) ? card.keyPoints.filter(Boolean).slice(0, 8) : [],
+    explanation: sanitizeTeachingLine(card.explanation || "Core teaching content for this topic.", "Core teaching content for this topic."),
+    keyPoints: Array.isArray(card.keyPoints)
+      ? card.keyPoints
+          .map((point) => sanitizeTeachingLine(point, "Key teaching point."))
+          .filter(Boolean)
+          .slice(0, 8)
+      : [],
   }));
 
   const mainTopic = firstNonEmpty(analysis.mainTopic, "Topic");
-  const sourceContentSummary = firstNonEmpty(
-    analysis.sourceContent[0],
-    `Use only directly supported source content for ${mainTopic}.`,
+  const sourceContentSummary = sanitizeTeachingLine(
+    firstNonEmpty(
+      analysis.sourceContent[0],
+      `Core idea from the source for ${mainTopic}.`,
+    ),
+    `Core idea from the source for ${mainTopic}.`,
   );
-  const additionalCoverageSummary = firstNonEmpty(
-    analysis.additionalExamCoverage[0],
-    `Add missing but relevant same-topic exam support for ${mainTopic}.`,
+  const additionalCoverageSummary = sanitizeTeachingLine(
+    firstNonEmpty(
+      analysis.additionalExamCoverage[0],
+      `Additional same-topic exam support for ${mainTopic} with a clear application and reasoning focus.`,
+    ),
+    `Additional same-topic exam support for ${mainTopic} with a clear application and reasoning focus.`,
   );
 
   const sourceContentCard = cards.find((card) => /source content/i.test(card.title) || /source content/i.test(card.explanation));
@@ -54,7 +116,9 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
       makeCard(
         `${mainTopic} — Source Content`,
         sourceContentSummary,
-        analysis.sourceContent.slice(0, 4).length > 0 ? analysis.sourceContent.slice(0, 4) : ["State the source-based idea clearly.", "Avoid mixing in unstated information."],
+        analysis.sourceContent.slice(0, 4).length > 0
+          ? analysis.sourceContent.slice(0, 4).map((item) => sanitizeTeachingLine(item, `Understand the main idea of ${mainTopic} from the source.`))
+          : ["The key idea from the source is stated clearly.", "Only support claims that are directly linked to the source material."],
       ),
     );
   }
@@ -65,7 +129,9 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
       makeCard(
         `${mainTopic} — Important Additional Exam Coverage`,
         additionalCoverageSummary,
-        analysis.additionalExamCoverage.slice(0, 4).length > 0 ? analysis.additionalExamCoverage.slice(0, 4) : ["Add one application prompt.", "Add one reasoning prompt.", "Add one recall check."],
+        analysis.additionalExamCoverage.slice(0, 4).length > 0
+          ? analysis.additionalExamCoverage.slice(0, 4).map((item) => sanitizeTeachingLine(item, `This topic is strengthened by realistic application and reasoning questions.`))
+          : ["Explain the concept in a classroom-friendly way.", "Apply the idea to a real example.", "Check the answer with a short reasoning step."],
       ),
     );
   }
@@ -88,7 +154,7 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
     cards.push(
       makeCard(
         `${mainTopic} — Formula & Meaning`,
-        `${formula} — ${meaning}`,
+        buildFormulaSummary(formula, meaning),
         [
           "State the formula clearly.",
           "Explain each variable and its meaning.",
@@ -104,16 +170,22 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
     cards.push(
       makeCard(
         `${mainTopic} — Worked Example`,
-        firstNonEmpty(
-          analysis.workedExamples[0]?.problem,
-          analysis.sourceContent.find((value) => /example|problem|solve|calculate/i.test(value)) || `Work through one guided example for ${mainTopic}.`,
+        sanitizeTeachingLine(
+          firstNonEmpty(
+            analysis.workedExamples[0]?.problem,
+            analysis.sourceContent.find((value) => /example|problem|solve|calculate/i.test(value)) || `Apply the key formula to a worked example involving ${mainTopic}.`,
+          ),
+          `Apply the key formula to a worked example involving ${mainTopic}.`,
         ),
         [
-          firstNonEmpty(analysis.workedExamples[0]?.steps, "Write the known values, substitute into the formula, solve carefully, and state the final answer."),
+          sanitizeTeachingLine(
+            firstNonEmpty(analysis.workedExamples[0]?.steps, "Write the known values, substitute into the formula, solve carefully, and state the final answer."),
+            "Write the known values, substitute into the formula, solve carefully, and state the final answer.",
+          ),
           "Show the reasoning step by step.",
           "Check units and final result before concluding.",
         ],
-        { example: analysis.workedExamples[0]?.steps || "Show the solving steps clearly." },
+        { example: analysis.workedExamples[0]?.steps || "Write the known values, substitute into the formula, solve carefully, and state the final answer." },
       ),
     );
   }
@@ -123,13 +195,16 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
     cards.push(
       makeCard(
         `${mainTopic} — Diagram / Visual Map`,
-        firstNonEmpty(analysis.diagrams[0]?.description, analysis.tables[0]?.description, "Create a clean teaching diagram that labels the key parts and shows their relationship."),
+        sanitizeTeachingLine(
+          firstNonEmpty(analysis.diagrams[0]?.description, analysis.tables[0]?.description, "The diagram labels the key parts and shows how they are related."),
+          "The diagram labels the key parts and shows how they are related.",
+        ),
         [
           "Label the important parts clearly.",
           "Show relationships or sequence visually.",
           "Tie the diagram back to the formula or concept.",
         ],
-        { diagram: analysis.diagrams[0]?.description || "Show a simple labelled visual for this concept." },
+        { diagram: analysis.diagrams[0]?.description || "The diagram labels the key parts and shows how they are related." },
       ),
     );
   }
@@ -170,11 +245,14 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
     cards.push(
       makeCard(
         `${mainTopic} — Additional Exam Coverage`,
-        firstNonEmpty(
-          analysis.additionalExamCoverage[0],
-          "Include extended practice on concept application, diagrams or questions that are likely to appear in mixed-format assessments.",
+        sanitizeTeachingLine(
+          firstNonEmpty(
+            analysis.additionalExamCoverage[0],
+            `This topic is strengthened by additional application, reasoning, and quick recall practice in ${mainTopic}.`,
+          ),
+          `This topic is strengthened by additional application, reasoning, and quick recall practice in ${mainTopic}.`,
         ),
-        analysis.additionalExamCoverage.slice(0, 4),
+        analysis.additionalExamCoverage.slice(0, 4).map((item) => sanitizeTeachingLine(item, `Apply the concept in a different context and explain the reasoning clearly.`)),
       ),
     );
   }

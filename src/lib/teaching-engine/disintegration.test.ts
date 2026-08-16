@@ -5,7 +5,7 @@ describe("ensureMinimumDisintegrationCards", () => {
   it("creates a coverage-safe deck with at least seven cards for a dense topic", () => {
     const cards = ensureMinimumDisintegrationCards({
       mainTopic: "Electricity",
-      subtopics: ["Current", "Resistance", "Ohm's Law", "Circuit"] ,
+      subtopics: ["Current", "Resistance", "Ohm's Law", "Circuit"],
       sourceContent: [
         "Current is the flow of charge.",
         "Resistance opposes current flow.",
@@ -64,5 +64,47 @@ describe("ensureMinimumDisintegrationCards", () => {
     expect(cards.some((card) => /exam|revision/i.test(card.title))).toBe(true);
     expect(cards.some((card) => /source content/i.test(card.title))).toBe(true);
     expect(cards.some((card) => /additional exam coverage/i.test(card.title))).toBe(true);
+  });
+
+  it("strips internal generation instructions from card content", () => {
+    const cards = ensureMinimumDisintegrationCards({
+      mainTopic: "Ohm's Law",
+      subtopics: ["Electrical current", "Resistance"],
+      sourceContent: [
+        "Voltage is directly proportional to current, V = IR.",
+      ],
+      additionalExamCoverage: [
+        "Explain V = IR and define each variable.",
+      ],
+      definitions: [
+        { title: "Definition", text: "Current is the flow of charge." },
+      ],
+      formulae: [
+        { formula: "V = IR", meaning: "Voltage = current × resistance", units: "V, A, Ω" },
+      ],
+      workedExamples: [
+        { title: "Worked Example", problem: "Find current using V = 12 V and R = 4 Ω.", steps: "I = V / R = 12 / 4 = 3 A" },
+      ],
+      diagrams: [
+        { title: "Circuit Diagram", description: "A battery, resistor, and ammeter connected in series." },
+      ],
+      tables: [],
+      importantFacts: ["Resistance opposes current flow."],
+      examPoints: ["Define variables and solve numerically."],
+      commonQuestionTypes: ["Numerical application"],
+      commonMistakes: ["Forgetting to include units."],
+      revisionPoints: ["Memorise V = IR and define each variable."],
+      cards: [
+        {
+          title: "Prompt instruction card",
+          explanation: "Create a single comprehensive educational infographic covering the complete topic.",
+          keyPoints: ["Add one application prompt.", "Use a simple labelled classroom diagram."],
+        },
+      ],
+    });
+
+    const joined = cards.map((card) => `${card.title}\n${card.explanation}\n${card.keyPoints.join("\n")}`).join("\n");
+    expect(joined).not.toMatch(/create a single comprehensive educational infographic|add one application prompt|use a simple labelled classroom diagram|work through one guided example/i);
+    expect(joined).toContain("V = IR");
   });
 });

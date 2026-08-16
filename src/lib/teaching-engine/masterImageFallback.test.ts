@@ -28,11 +28,15 @@ describe("buildFallbackTeachingImageAnalysis", () => {
       "Electric current flows when a closed circuit is present. Ohm's law relates voltage, current, and resistance.",
     );
 
+    const joined = analysis.cards.map((card) => `${card.title}\n${card.explanation}\n${card.keyPoints.join("\n")}`).join("\n");
+
     expect(analysis.mainTopic).toBe("Electricity");
     expect(analysis.cards.length).toBeGreaterThanOrEqual(7);
     expect(analysis.cards.some((card) => /formula/i.test(card.title))).toBe(true);
     expect(analysis.cards.some((card) => /example/i.test(card.title))).toBe(true);
     expect(analysis.cards.some((card) => /mistake/i.test(card.title))).toBe(true);
     expect(analysis.cards.some((card) => /exam|revision/i.test(card.title))).toBe(true);
+    expect(joined).not.toMatch(/add one application prompt|create a single comprehensive educational infographic|simple labelled classroom diagram|work through one guided example/i);
+    expect(joined).toContain("V = IR");
   });
 });
