@@ -8,11 +8,12 @@ import { extractAcademicQuestions } from "@/lib/teaching-engine/academicExtracto
 import { getAutoRelevantOutputOptions } from "@/lib/teaching-engine/outputSelection";
 import { buildPromptTexts } from "@/lib/teaching-engine/promptBuilder";
 import {
+  clearMasterTeachingImage,
   clearTeachingEngineFiles,
   loadTeachingEngineFiles,
   saveTeachingEngineFiles,
 } from "@/lib/teaching-engine/persistence";
-import { STORAGE_KEYS, useLocalStorage } from "@/lib/storage";
+import { clearTeachingRunDerivedState, STORAGE_KEYS, useLocalStorage } from "@/lib/storage";
 import {
   DEPTH_OPTIONS,
   EXPLANATION_STYLE_OPTIONS,
@@ -1158,6 +1159,11 @@ function RouteComponent() {
       previous.controller.abort();
     }
 
+    clearTeachingRunDerivedState();
+    void clearMasterTeachingImage();
+    setPrompt("");
+    setWorkflowStep("upload");
+
     const currentController = new AbortController();
     const processingId = Date.now() + Math.random();
     activeProcessingRef.current = { id: processingId, controller: currentController };
@@ -1243,6 +1249,7 @@ function RouteComponent() {
 
   function clearAll() {
     cancelActiveProcessing();
+    clearTeachingRunDerivedState();
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (uploadAnotherInputRef.current) uploadAnotherInputRef.current.value = "";
     if (cameraInputRef.current) cameraInputRef.current.value = "";

@@ -83,6 +83,22 @@ export const STORAGE_KEYS = {
   teachingEngineWorkflowStep: "td.teaching-engine.workflow-step",
 } as const;
 
+export function clearTeachingRunDerivedState() {
+  if (!isBrowser) return;
+
+  const keysToReset = [
+    STORAGE_KEYS.teachingEnginePrompt,
+    STORAGE_KEYS.teachingEngineResponse,
+    STORAGE_KEYS.teachingEngineImageSpec,
+    STORAGE_KEYS.teachingEngineImageAnalysis,
+    STORAGE_KEYS.teachingEngineCards,
+  ];
+
+  for (const key of keysToReset) {
+    window.localStorage.removeItem(key);
+  }
+}
+
 export type Language = "en" | "hi" | "mr";
 
 export function pushRecent(rec: Omit<Recent, "visitedAt">) {

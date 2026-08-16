@@ -8,7 +8,7 @@ import {
 } from "@/lib/teaching-engine/persistence";
 import { ensureMinimumDisintegrationCards } from "@/lib/teaching-engine/disintegration";
 import { buildFallbackTeachingImageAnalysis } from "@/lib/teaching-engine/masterImageFallback";
-import { STORAGE_KEYS, useLocalStorage } from "@/lib/storage";
+import { clearTeachingRunDerivedState, STORAGE_KEYS, useLocalStorage } from "@/lib/storage";
 import type {
   ExtractedContent,
   TeachingCard,
@@ -903,6 +903,22 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   const [workflowNotice, setWorkflowNotice] = useState<string | null>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
 
+  const resetCurrentRunState = () => {
+    clearTeachingRunDerivedState();
+    void clearMasterTeachingImage();
+    setMasterImageFile(null);
+    setMasterImageUrl("");
+    setMasterImageMeta(null);
+    setTeachingResponse("");
+    setImageSpec("");
+    setAnalysis(EMPTY_ANALYSIS);
+    setCards([]);
+    setExportArtifact(null);
+    setExportStatus(null);
+    setWorkflowError(null);
+    setWorkflowNotice("Current teaching run reset for the latest source.");
+  };
+
   const canGenerateImage = useMemo(
     () => teachingResponse.trim().length > 0 || prompt.trim().length > 0,
     [teachingResponse, prompt],
@@ -915,6 +931,33 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
     const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void>; canShare?: (data: ShareData) => boolean };
     return !!nav.share;
   }, []);
+
+  const currentSourceSignature = useMemo(
+    () => JSON.stringify({
+      sourceText: sourceExtraction.extractedText,
+      subject: extracted.subject,
+      chapter: extracted.chapter,
+      topic: extracted.topic,
+      board: extracted.board,
+      classLevel: extracted.classLevel,
+    }),
+    [extracted.board, extracted.chapter, extracted.classLevel, extracted.subject, extracted.topic, sourceExtraction.extractedText],
+  );
+
+  const lastSourceSignatureRef = useRef<string>("");
+
+  useEffect(() => {
+    const previousSignature = lastSourceSignatureRef.current;
+    if (!currentSourceSignature || currentSourceSignature === previousSignature) {
+      return;
+    }
+
+    if (previousSignature && previousSignature !== currentSourceSignature) {
+      resetCurrentRunState();
+    }
+
+    lastSourceSignatureRef.current = currentSourceSignature;
+  }, [currentSourceSignature]);
 
   useEffect(() => {
     let active = true;
@@ -1353,18 +1396,26 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   }
 
   const activeCard = hasCards ? cards[activeCardIndex] : null;
+  const sourceReady = sourceExtraction.extractionStage === "ready" || sourceExtraction.extractionStage === "needs-review";
+  const step1Done = sourceReady;
+  const step2Done = step1Done && teachingResponse.trim().length > 0;
+  const step3Done = step2Done && !!masterImageUrl;
+  const step4Done = step3Done && hasAnalysis;
+  const step5Done = step4Done && hasCards;
+  const step6Done = step5Done && !!activeCard;
+  const step7Done = step6Done && !!exportArtifact;
 
   const stepStatuses = [
     {
       label: "STEP 1 SOURCE MATERIAL -> OCR/SOURCE EXTRACTION",
-      done: sourceExtraction.extractionStage === "ready" || sourceExtraction.extractionStage === "needs-review",
+      done: step1Done,
     },
-    { label: "STEP 2 AI TEACHING RESPONSE", done: teachingResponse.trim().length > 0 },
-    { label: "STEP 3 CREATE MASTER TEACHING IMAGE", done: !!masterImageUrl },
-    { label: "STEP 4 MASTER IMAGE AI UNDERSTANDING", done: hasAnalysis },
-    { label: "STEP 5 TOPIC DISINTEGRATION", done: hasCards },
-    { label: "STEP 6 TEACHING DECK", done: hasCards && !!activeCard },
-    { label: "STEP 7 EXPORT", done: hasCards },
+    { label: "STEP 2 AI TEACHING RESPONSE", done: step2Done },
+    { label: "STEP 3 CREATE MASTER TEACHING IMAGE", done: step3Done },
+    { label: "STEP 4 MASTER IMAGE AI UNDERSTANDING", done: step4Done },
+    { label: "STEP 5 TOPIC DISINTEGRATION", done: step5Done },
+    { label: "STEP 6 TEACHING DECK", done: step6Done },
+    { label: "STEP 7 EXPORT", done: step7Done },
   ];
 
   return (
