@@ -170,6 +170,72 @@ describe("academic extraction pipeline", () => {
     expect(items[0].subject).toBe("Physics");
     expect(items[0].ocrText.toLowerCase()).not.toContain("reply to chatgpt");
     expect(items[0].ocrText).not.toContain("87%");
+    expect(items[0].ignoredContent).toEqual(expect.arrayContaining(["Reply to ChatGPT", "Share a link to chat", "8:42 PM", "87%"]));
+  });
+
+  it("keeps academic source content isolated from screenshot UI text", () => {
+    const text = [
+      "CBSE Class 10 Physics",
+      "Topic: Electricity",
+      "Calculate current if V = 24V and R = 6 ohm.",
+      "Formula: V = IR",
+      "Reply to ChatGPT",
+      "This creates a copy that others can chat with",
+      "Select ONLY the visible area",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].academicSourceContent).toContain("Calculate current if V = 24V and R = 6 ohm.");
+    expect(items[0].academicSourceContent).not.toContain("Reply to ChatGPT");
+    expect(items[0].academicSourceContent).not.toContain("This creates a copy that others can chat with");
+    expect(items[0].academicQuestions).toEqual(expect.arrayContaining(["Calculate current if V = 24V and R = 6 ohm."]));
+    expect(items[0].ignoredContent).toEqual(expect.arrayContaining([
+      "Reply to ChatGPT",
+      "This creates a copy that others can chat with",
+      "Select ONLY the visible area",
+    ]));
+  });
+
+  it("groups related multi-screenshot source material into one academic unit", () => {
+    const text = [
+      "CBSE CLASS 10 - PHYSICS",
+      "Chapter: Light - Reflection and Refraction",
+      "Topic: Spherical Mirrors",
+      "There are two types of spherical mirrors:",
+      "1. Concave mirror",
+      "2. Convex mirror",
+      "Reply to ChatGPT",
+      "",
+      "CBSE CLASS 10 - PHYSICS",
+      "Chapter: Light - Reflection and Refraction",
+      "Topic: Spherical Mirrors",
+      "Example:",
+      "If the focal length of a concave mirror is 15 cm, find its radius of curvature.",
+      "Given:",
+      "f = 15 cm",
+      "Formula:",
+      "R = 2f",
+      "Therefore:",
+      "R = 30 cm",
+      "This creates a copy that others can chat with",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].subject).toBe("Physics");
+    expect(items[0].topic).toContain("Spherical Mirrors");
+    expect(items[0].academicSourceContent).toContain("1. concave mirror");
+    expect(items[0].academicSourceContent).toContain("If the focal length of a concave mirror is 15 cm, find its radius of curvature.");
+    expect(items[0].academicQuestions).toEqual([
+      "If the focal length of a concave mirror is 15 cm, find its radius of curvature.",
+    ]);
+    expect(items[0].ignoredContent).toEqual(expect.arrayContaining([
+      "Reply to ChatGPT",
+      "This creates a copy that others can chat with",
+    ]));
   });
 
   it("does not split concave and convex concept headings into separate questions", () => {
@@ -477,6 +543,7 @@ describe("academic extraction pipeline", () => {
     expect(items[0].topic).toContain("Spherical Mirrors");
     expect(items[0].formulae.join(" | ")).toContain("R = 2f");
     expect(items[0].numericalQuestions.join(" ")).toContain("f = 15 cm");
+    expect(items[0].academicQuestions?.length ?? 0).toBe(1);
 
     const prompt = buildPromptTexts({
       sourceFiles: ["Image: spherical-mirrors.png"],
@@ -541,6 +608,31 @@ describe("academic extraction pipeline", () => {
     expect(prompt).toContain("Light - Reflection and Refraction");
     expect(prompt).not.toContain("Linear Equations");
     expect(prompt).not.toContain("x + 3 = 9");
+  });
+
+  it("does not leak ignored content into the generated prompt", () => {
+    const source = [
+      "Physics",
+      "Topic: Spherical Mirrors",
+      "If the focal length of a concave mirror is 15 cm, find its radius of curvature.",
+      "This creates a copy that others can chat with",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(source);
+    const prompt = buildPromptTexts({
+      sourceFiles: ["Image: ui-noise.png"],
+      extracted: items[0],
+      extractedItems: items,
+      studentProfile: profile,
+      depthOptions: depth,
+      selectedOutputOptions: ["Normal Solution", "Logical Flow", "Create Teaching Image"],
+      visualStyle: visual,
+      explanationStyle: explanation,
+      objective: "Generate classroom-ready output.",
+    })[0];
+
+    expect(prompt).toContain("If the focal length of a concave mirror is 15 cm, find its radius of curvature.");
+    expect(prompt).not.toContain("This creates a copy that others can chat with");
   });
 
   it("detects ghost story interest and produces a classroom-safe research prompt", () => {

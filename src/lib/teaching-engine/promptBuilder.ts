@@ -270,7 +270,7 @@ function buildSinglePrompt(input: PromptBuilderInput) {
   const outputOptions = safeSelectedOutputOptions.length > 0 ? safeSelectedOutputOptions : ["Normal Solution"];
   const numberedOutputOptions = getNumberedOutputOptions(OUTPUT_OPTIONS).filter(({ name }) => outputOptions.includes(name as any));
   const objectiveLine = objective.trim() || "Generate a clear classroom-ready explanation for this learner.";
-  const ocrPreview = extracted.ocrText.trim() || "No OCR text provided. Use extracted metadata and inferred chapter context.";
+  const ocrPreview = (extracted.academicSourceContent ?? extracted.ocrText).trim() || "No OCR text provided. Use extracted metadata and inferred chapter context.";
   const examEvidence = formatExamImportanceEvidence(extracted.examImportance);
   const formulaList = extracted.formulaDetails && extracted.formulaDetails.length > 0
     ? extracted.formulaDetails.map((item) => `${item.normalized} (confidence ${Math.round(item.confidence * 100)}%, raw: ${item.raw})`)

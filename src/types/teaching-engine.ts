@@ -119,7 +119,27 @@ export type FormulaExtraction = {
 
 export type ExtractedContent = {
   ocrText: string;
+  rawOcrText?: string;
   cleanedOcrText?: string;
+  academicSourceContent?: string;
+  academicQuestions?: string[];
+  academicMetadata?: {
+    subject: string;
+    board: string;
+    classLevel: string;
+    chapter: string;
+    topic: string;
+    concept?: string;
+    questionType: string;
+    questionTypes: string[];
+    language: string;
+    hasTables: boolean;
+    hasExercises: boolean;
+    examImportance: string;
+    formulae: string[];
+    keywords: string[];
+  };
+  ignoredContent?: string[];
   subject: string;
   board: string;
   classLevel: string;

@@ -100,13 +100,27 @@ const GENERIC_CHAPTER_WORDS = new Set(["equation", "formula", "diagram", "questi
 const UI_NOISE_PATTERNS = [
   /reply to chatgpt/i,
   /share a link to chat/i,
+  /share (this )?(chat|link)/i,
+  /this creates a copy that others can chat with/i,
+  /others can chat with/i,
+  /select only/i,
+  /copy link/i,
+  /tap to retry/i,
+  /view all/i,
+  /see all/i,
+  /ask anything/i,
   /^hi$/i,
   /^hey$/i,
   /^chatgpt$/i,
   /^new chat$/i,
+  /^today$/i,
   /battery/i,
   /^\d{1,2}:\d{2}(\s?[ap]m)?$/i,
+  /^\d{1,2}:\d{2}\s*[ap]m$/i,
   /^\d{1,3}%$/,
+  /^\d+\/\d+$/,
+  /\b(?:png|jpg|jpeg|webp|gif|pdf|docx?|pptx?)\b/i,
+  /\bfilename\b/i,
   /status/i,
   /send message/i,
   /type a message/i,
@@ -114,6 +128,16 @@ const UI_NOISE_PATTERNS = [
   /device indicators?/i,
   /wifi/i,
   /network/i,
+  /navigation/i,
+  /back$/i,
+  /search$/i,
+  /message$/i,
+  /notifications?/i,
+  /home$/i,
+  /edit$/i,
+  /copy$/i,
+  /share$/i,
+  /more$/i,
 ];
 
 const STOP_WORDS = new Set([
@@ -138,6 +162,117 @@ function isUiNoise(line: string) {
   if (!line) return true;
   if (/^[^a-zA-Z0-9]+$/.test(line)) return true;
   return UI_NOISE_PATTERNS.some((pattern) => pattern.test(line));
+}
+
+function isUiChromeLine(line: string) {
+  if (!line) return true;
+  if (isUiNoise(line)) return true;
+  if (/^(reply|share|copy|select|search|back|home|menu|send|message|edit|delete|save)\b/i.test(line)) return true;
+  if (/\b(chatgpt|status bar|notification|swipe|tap|click|button|link|copy that others can chat with)\b/i.test(line)) return true;
+  return false;
+}
+
+function allAcademicKeywords() {
+  const keywords = new Set<string>();
+
+  for (const rule of Object.values(SUBJECT_RULES)) {
+    for (const alias of rule.aliases) keywords.add(alias);
+    for (const keyword of rule.keywords) keywords.add(keyword);
+    for (const topic of rule.topics) {
+      keywords.add(topic.topic);
+      keywords.add(topic.chapter);
+      if (topic.concept) keywords.add(topic.concept);
+      for (const alias of topic.aliases) keywords.add(alias);
+    }
+  }
+
+  return Array.from(keywords);
+}
+
+const ACADEMIC_KEYWORDS = allAcademicKeywords();
+
+function scoreAcademicLine(line: string) {
+  const lower = normalize(line);
+  let score = 0;
+
+  if (!lower.trim()) return -10;
+  if (isUiChromeLine(line)) return -10;
+
+  if (/\b(subject|board|class|grade|std|chapter|topic|exercise|question|example|solution|answer|given|formula|therefore|proof|theorem|definition|explain|derive|calculate|find|solve|evaluate|determine|diagram|label|table|figure|numerical|worksheet|assignment|homework|revision|important terms?)\b/i.test(line)) {
+    score += 3;
+  }
+
+  if (/\b(cbse|icse|igcse|state board)\b/i.test(line)) {
+    score += 2;
+  }
+
+  if (/\b\d+\s*(?:cm|mm|m|km|kg|g|mg|s|min|hr|v|a|ohm|w|n|pa|j|kwh|%)\b/i.test(line)) {
+    score += 2;
+  }
+
+  if (/(?:[A-Za-z][A-Za-z0-9_]*\s*=\s*[^=].+|\b\d+\s*\/\s*[A-Za-z]\b|\b[A-Za-z]+\s*[+\-*/^]\s*[A-Za-z0-9]+|\bV\s*=\s*I\s*R\b)/i.test(line)) {
+    score += 3;
+  }
+
+  if (/^(?:\d+[).:-]\s*)?(concave|convex|mirror|pole|focus|principal focus|focal length|radius of curvature|centre of curvature|center of curvature|object|image)\b/i.test(line)) {
+    score += 2;
+  }
+
+  score += Math.min(4, keywordHits(lower, ACADEMIC_KEYWORDS));
+
+  if (/^[A-Z][A-Z\s\-/:&]+$/.test(line) && /[A-Z]{3,}/.test(line)) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function extractAcademicQuestionLines(segment: string) {
+  const lines = segment.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const matches = lines.filter((line) => looksLikeQuestionText(line));
+  return deduplicateBlocks(matches);
+}
+
+function partitionAcademicContent(rawText: string) {
+  const lines = rawText.split(/\r?\n/).map(cleanLine);
+  const baseKinds = lines.map((line) => {
+    if (!line) return "blank" as const;
+    if (isUiChromeLine(line)) return "ignored" as const;
+    return scoreAcademicLine(line) >= 2 ? "academic" as const : "undetermined" as const;
+  });
+
+  const academicLines: string[] = [];
+  const ignoredLines: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const kind = baseKinds[index];
+
+    if (!line || kind === "blank") continue;
+    if (kind === "ignored") {
+      ignoredLines.push(line);
+      continue;
+    }
+
+    if (kind === "academic") {
+      academicLines.push(line);
+      continue;
+    }
+
+    const prevAcademic = baseKinds.slice(Math.max(0, index - 2), index).includes("academic");
+    const nextAcademic = baseKinds.slice(index + 1, Math.min(baseKinds.length, index + 3)).includes("academic");
+
+    if ((prevAcademic || nextAcademic) && !isUiChromeLine(line)) {
+      academicLines.push(line);
+    } else {
+      ignoredLines.push(line);
+    }
+  }
+
+  return {
+    academicText: academicLines.join("\n").trim(),
+    ignoredLines: deduplicateBlocks(ignoredLines),
+  };
 }
 
 export function sanitizeOcrText(text: string) {
@@ -268,6 +403,105 @@ function splitIntoQuestionBlocks(text: string) {
   if (compact.length === 0) return [cleaned];
 
   return compact;
+}
+
+function extractQuestionHeaderNumber(block: string) {
+  const match = block.match(/(?:^|\n)(?:test|question|q)\s*(\d+)\b/i);
+  return match?.[1] ?? null;
+}
+
+function getBlockSummary(block: string) {
+  const subjectGuess = detectSubject(block);
+  const topicAndChapter = detectTopicAndChapter(block, subjectGuess.subject);
+  const formulae = extractFormulaeDetailed(block)
+    .filter((item) => item.confidence >= 0.6)
+    .map((item) => item.normalized.toLowerCase());
+  const keywords = new Set(extractKeywords(block));
+
+  return {
+    subject: subjectGuess.subject,
+    chapter: topicAndChapter.chapter,
+    topic: topicAndChapter.topic,
+    formulae,
+    keywords,
+    hasExplicitQuestionHeader: /(?:^|\n)(?:test|question|q)\s*\d+/i.test(block),
+    headerNumber: extractQuestionHeaderNumber(block),
+  };
+}
+
+function countKeywordOverlap(left: Set<string>, right: Set<string>) {
+  let overlap = 0;
+  for (const value of left) {
+    if (right.has(value)) overlap += 1;
+  }
+  return overlap;
+}
+
+function hasContinuationCue(block: string) {
+  return /(?:^|\n)(continued|example|given|formula|therefore|answer|solution|important terms?|quick revision|common mistake)\b/i.test(block);
+}
+
+function shouldMergeAdjacentBlocks(current: string, next: string) {
+  const currentSummary = getBlockSummary(current);
+  const nextSummary = getBlockSummary(next);
+
+  if (
+    currentSummary.hasExplicitQuestionHeader &&
+    nextSummary.hasExplicitQuestionHeader &&
+    currentSummary.headerNumber &&
+    nextSummary.headerNumber &&
+    currentSummary.headerNumber !== nextSummary.headerNumber
+  ) {
+    return false;
+  }
+
+  if (
+    currentSummary.subject !== UNKNOWN &&
+    nextSummary.subject !== UNKNOWN &&
+    currentSummary.subject !== nextSummary.subject
+  ) {
+    return false;
+  }
+
+  if (
+    currentSummary.topic !== UNKNOWN &&
+    nextSummary.topic !== UNKNOWN &&
+    currentSummary.topic !== nextSummary.topic &&
+    currentSummary.chapter !== UNKNOWN &&
+    nextSummary.chapter !== UNKNOWN &&
+    currentSummary.chapter !== nextSummary.chapter
+  ) {
+    return false;
+  }
+
+  let relationScore = 0;
+
+  if (currentSummary.subject !== UNKNOWN && currentSummary.subject === nextSummary.subject) relationScore += 2;
+  if (currentSummary.chapter !== UNKNOWN && currentSummary.chapter === nextSummary.chapter) relationScore += 2;
+  if (currentSummary.topic !== UNKNOWN && currentSummary.topic === nextSummary.topic) relationScore += 3;
+  if (countKeywordOverlap(currentSummary.keywords, nextSummary.keywords) >= 2) relationScore += 2;
+  if (currentSummary.formulae.some((formula) => nextSummary.formulae.includes(formula))) relationScore += 1;
+  if (!currentSummary.hasExplicitQuestionHeader && !nextSummary.hasExplicitQuestionHeader) relationScore += 1;
+  if (hasContinuationCue(current) || hasContinuationCue(next)) relationScore += 1;
+
+  return relationScore >= 4;
+}
+
+function mergeRelatedBlocks(blocks: string[]) {
+  if (blocks.length <= 1) return blocks;
+
+  const merged: string[] = [];
+
+  for (const block of blocks) {
+    const previous = merged[merged.length - 1];
+    if (previous && shouldMergeAdjacentBlocks(previous, block)) {
+      merged[merged.length - 1] = deduplicateBlocks([previous, block]).join("\n");
+      continue;
+    }
+    merged.push(block);
+  }
+
+  return merged;
 }
 
 function keywordHits(text: string, keywords: string[]) {
@@ -717,9 +951,65 @@ function enforceConfidence(value: string | undefined, confidence: number) {
 }
 
 export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
-  const cleaned = sanitizeOcrText(rawText);
+  const partitioned = partitionAcademicContent(rawText);
+  const cleaned = partitioned.academicText;
   if (!cleaned) {
-    return [];
+    const sanitizedRaw = sanitizeOcrText(rawText);
+    if (!sanitizedRaw) {
+      return [];
+    }
+
+    return [{
+      ocrText: "",
+      rawOcrText: rawText,
+      cleanedOcrText: "",
+      academicSourceContent: "",
+      academicQuestions: [],
+      academicMetadata: {
+        subject: UNKNOWN,
+        board: NOT_IDENTIFIED,
+        classLevel: NOT_IDENTIFIED,
+        chapter: UNKNOWN,
+        topic: UNKNOWN,
+        concept: UNKNOWN,
+        questionType: UNKNOWN,
+        questionTypes: [UNKNOWN],
+        language: enforceConfidence(detectLanguage(sanitizedRaw).value, detectLanguage(sanitizedRaw).confidence),
+        hasTables: false,
+        hasExercises: false,
+        examImportance: "Past-paper frequency unavailable.",
+        formulae: [],
+        keywords: [],
+      },
+      ignoredContent: deduplicateBlocks(sanitizedRaw.split(/\r?\n/).map(cleanLine).filter(Boolean)),
+      subject: UNKNOWN,
+      board: NOT_IDENTIFIED,
+      classLevel: NOT_IDENTIFIED,
+      chapter: UNKNOWN,
+      topic: UNKNOWN,
+      concept: UNKNOWN,
+      questionType: UNKNOWN,
+      questionTypes: [UNKNOWN],
+      language: enforceConfidence(detectLanguage(sanitizedRaw).value, detectLanguage(sanitizedRaw).confidence),
+      hasTables: false,
+      hasExercises: false,
+      examImportance: "Past-paper frequency unavailable.",
+      formulae: [],
+      formulaDetails: [],
+      numericalQuestions: [],
+      diagrams: [],
+      keywords: [],
+      confidence: {
+        subject: 0.2,
+        board: 0.28,
+        classLevel: 0.3,
+        chapter: 0.2,
+        topic: 0.2,
+        concept: 0.2,
+        questionType: 0.35,
+        language: detectLanguage(sanitizedRaw).confidence,
+      },
+    }];
   }
 
   const cleanedForAnalysis = normalizeOcrForAnalysis(cleaned);
@@ -730,7 +1020,7 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
   const hasTables = detectHasTables(cleanedForAnalysis);
   const hasExercises = detectHasExercises(cleanedForAnalysis);
   const examImportance = detectExamImportance(cleanedForAnalysis);
-  const blocks = splitIntoQuestionBlocks(cleanedForAnalysis);
+  const blocks = mergeRelatedBlocks(splitIntoQuestionBlocks(cleanedForAnalysis));
   const cleanedFormulaDetails = extractFormulaeDetailed(cleanedForAnalysis);
 
   const questionBlocks = blocks.length === 1
@@ -763,19 +1053,47 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
     const normalizedFormulae = formulaDetails
       .filter((item) => item.confidence >= 0.6)
       .map((item) => item.normalized);
+    const academicQuestions = extractAcademicQuestionLines(block);
+    const subject = enforceConfidence(subjectGuess.subject, subjectGuess.confidence);
+    const chapter = enforceConfidence(topicAndChapter.chapter, topicAndChapter.chapterConfidence);
+    const topic = enforceConfidence(topicAndChapter.topic, topicAndChapter.topicConfidence);
+    const concept = enforceConfidence(topicAndChapter.concept, topicAndChapter.conceptConfidence);
+    const primaryQuestionType = enforceConfidence(questionType.value, questionType.confidence);
+    const language = enforceConfidence(languageGuess.value, languageGuess.confidence);
+    const keywords = extractKeywords(block);
 
     return {
       ocrText: block,
+      rawOcrText: rawText,
       cleanedOcrText: block,
-      subject: enforceConfidence(subjectGuess.subject, subjectGuess.confidence),
+      academicSourceContent: block,
+      academicQuestions,
+      academicMetadata: {
+        subject,
+        board: boardGuess.value,
+        classLevel: classGuess.value,
+        chapter,
+        topic,
+        concept,
+        questionType: primaryQuestionType,
+        questionTypes,
+        language,
+        hasTables,
+        hasExercises,
+        examImportance,
+        formulae: normalizedFormulae,
+        keywords,
+      },
+      ignoredContent: partitioned.ignoredLines,
+      subject,
       board: boardGuess.value,
       classLevel: classGuess.value,
-      chapter: enforceConfidence(topicAndChapter.chapter, topicAndChapter.chapterConfidence),
-      topic: enforceConfidence(topicAndChapter.topic, topicAndChapter.topicConfidence),
-      concept: enforceConfidence(topicAndChapter.concept, topicAndChapter.conceptConfidence),
-      questionType: enforceConfidence(questionType.value, questionType.confidence),
+      chapter,
+      topic,
+      concept,
+      questionType: primaryQuestionType,
       questionTypes,
-      language: enforceConfidence(languageGuess.value, languageGuess.confidence),
+      language,
       hasTables,
       hasExercises,
       examImportance,
@@ -783,7 +1101,7 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
       formulaDetails,
       numericalQuestions: extractNumericalQuestions(block),
       diagrams: extractDiagramPrompts(block),
-      keywords: extractKeywords(block),
+      keywords,
       confidence: {
         subject: subjectGuess.confidence,
         board: boardGuess.confidence,
@@ -802,7 +1120,29 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
     : [
         {
           ocrText: cleaned,
+          rawOcrText: rawText,
           cleanedOcrText: cleanedForAnalysis,
+          academicSourceContent: cleanedForAnalysis,
+          academicQuestions: extractAcademicQuestionLines(cleanedForAnalysis),
+          academicMetadata: {
+            subject: UNKNOWN,
+            board: boardGuess.value,
+            classLevel: classGuess.value,
+            chapter: UNKNOWN,
+            topic: UNKNOWN,
+            concept: UNKNOWN,
+            questionType: UNKNOWN,
+            questionTypes: [UNKNOWN],
+            language: enforceConfidence(languageGuess.value, languageGuess.confidence),
+            hasTables,
+            hasExercises,
+            examImportance,
+            formulae: cleanedFormulaDetails
+              .filter((item) => item.confidence >= 0.6)
+              .map((item) => item.normalized),
+            keywords: extractKeywords(cleaned),
+          },
+          ignoredContent: partitioned.ignoredLines,
           subject: UNKNOWN,
           board: boardGuess.value,
           classLevel: classGuess.value,
