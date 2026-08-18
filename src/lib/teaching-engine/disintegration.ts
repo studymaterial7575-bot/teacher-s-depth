@@ -30,6 +30,38 @@ const INTERNAL_GENERATION_DIRECTIVES = [
   /explain what each variable means and how to use the formula/i,
 ];
 
+const PROMPT_OR_METADATA_PATTERNS = [
+  /you are generating a teaching response/i,
+  /this is not a chatbot conversation/i,
+  /extracted content\s*:/i,
+  /source material\s*:/i,
+  /student profile\s*:/i,
+  /teaching depth required\s*:/i,
+  /selected output options?\s*:/i,
+  /required visual style\s*:/i,
+  /required explanation style\s*:/i,
+  /teaching objective\s*:/i,
+  /output formatting instructions\s*:/i,
+  /respond in exactly three sections/i,
+  /section\s*1\s*:/i,
+  /section\s*2\s*:/i,
+  /section\s*3\s*:/i,
+  /ocr text\s*:/i,
+  /subject\s*:/i,
+  /board\s*:/i,
+  /class\s*:/i,
+  /chapter\s*:/i,
+  /topic\s*:/i,
+  /question type\s*:/i,
+  /language\s*:/i,
+  /keywords\s*:/i,
+  /contains tables\s*:/i,
+  /contains exercises\s*:/i,
+  /do not ask follow-up questions/i,
+  /generate the full educational response now/i,
+  /^https?:\/\//i,
+];
+
 function firstNonEmpty(...values: Array<string | undefined>) {
   for (const value of values) {
     if (typeof value === "string" && value.trim().length > 0) return value.trim();
@@ -37,20 +69,47 @@ function firstNonEmpty(...values: Array<string | undefined>) {
   return "";
 }
 
-function sanitizeTeachingLine(value: string, fallback: string) {
+function sanitizeTeachingLine(value: string, fallback = "") {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (!normalized) return fallback;
+  if (PROMPT_OR_METADATA_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return fallback;
+  }
   if (INTERNAL_GENERATION_DIRECTIVES.some((pattern) => pattern.test(normalized))) {
     return fallback;
   }
   return normalized;
 }
 
+function hasEducationalSignal(value: string) {
+  const text = sanitizeTeachingLine(value, "");
+  if (!text) return false;
+
+  if (/[=+\-/*^]/.test(text) && /\d|[a-z]/i.test(text)) return true;
+  if (/\b(concept|definition|formula|equation|law|principle|example|solve|calculate|derive|diagram|label|graph|table|mistake|revision|exam|reason|because|therefore|given|answer)\b/i.test(text)) return true;
+  if (/\b(cbse|icse|igcse|physics|chemistry|biology|mathematics|history|geography|english)\b/i.test(text)) return true;
+  return text.split(/\s+/).length >= 4;
+}
+
+function sanitizeList(values: string[], max = 6) {
+  const output: string[] = [];
+  for (const value of values) {
+    const clean = sanitizeTeachingLine(value, "");
+    if (!clean) continue;
+    if (!hasEducationalSignal(clean)) continue;
+    if (!output.includes(clean)) {
+      output.push(clean);
+    }
+    if (output.length >= max) break;
+  }
+  return output;
+}
+
 function buildFormulaSummary(formula: string, meaning?: string) {
   const normalizedFormula = formula.trim();
   const safeMeaning = sanitizeTeachingLine(
     meaning || "",
-    "Explain the relationship between the main quantities in this topic.",
+    "",
   );
 
   if (!normalizedFormula) {
@@ -69,218 +128,162 @@ function normalizeCardTitle(value: string) {
 }
 
 function makeCard(title: string, explanation: string, keyPoints: string[], extra: Partial<TeachingCard> = {}): TeachingCard {
+  const cleanExplanation = sanitizeTeachingLine(explanation, "");
+  const cleanPoints = keyPoints
+    .map((point) => sanitizeTeachingLine(point, ""))
+    .filter((point) => point.length > 0 && hasEducationalSignal(point))
+    .slice(0, 8);
+
+  if (!cleanExplanation || !hasEducationalSignal(cleanExplanation)) {
+    return {
+      title: normalizeCardTitle(title),
+      explanation: "",
+      keyPoints: [],
+      ...extra,
+    };
+  }
+
   return {
     title: normalizeCardTitle(title),
-    explanation: sanitizeTeachingLine(explanation, "Core teaching content for this topic."),
-    keyPoints: keyPoints
-      .map((point) => sanitizeTeachingLine(point, "Key idea for this topic."))
-      .filter(Boolean)
-      .slice(0, 8),
+    explanation: cleanExplanation,
+    keyPoints: cleanPoints,
     ...extra,
   };
 }
 
+function isUsableCard(card: TeachingCard) {
+  if (!card.explanation || !hasEducationalSignal(card.explanation)) return false;
+  if (PROMPT_OR_METADATA_PATTERNS.some((pattern) => pattern.test(card.explanation))) return false;
+  if (INTERNAL_GENERATION_DIRECTIVES.some((pattern) => pattern.test(card.explanation))) return false;
+  return true;
+}
+
+function pushCard(cards: TeachingCard[], card: TeachingCard) {
+  if (!isUsableCard(card)) return;
+  cards.push(card);
+}
+
 export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysisResult): TeachingCard[] {
-  const existing = Array.isArray(analysis.cards) && analysis.cards.length > 0 ? [...analysis.cards] : [];
-  const cards: TeachingCard[] = existing.map((card) => ({
-    ...card,
-    title: normalizeCardTitle(card.title),
-    explanation: sanitizeTeachingLine(card.explanation || "Core teaching content for this topic.", "Core teaching content for this topic."),
-    keyPoints: Array.isArray(card.keyPoints)
-      ? card.keyPoints
-          .map((point) => sanitizeTeachingLine(point, "Key teaching point."))
-          .filter(Boolean)
-          .slice(0, 8)
-      : [],
-  }));
-
+  const cards: TeachingCard[] = [];
   const mainTopic = firstNonEmpty(analysis.mainTopic, "Topic");
-  const sourceContentSummary = sanitizeTeachingLine(
-    firstNonEmpty(
-      analysis.sourceContent[0],
-      `Core idea from the source for ${mainTopic}.`,
-    ),
-    `Core idea from the source for ${mainTopic}.`,
+  const sourceContent = sanitizeList(analysis.sourceContent, 8);
+  const definitions = sanitizeList(analysis.definitions.map((item) => firstNonEmpty(item.text, item.title)), 5);
+  const formulae = analysis.formulae
+    .map((item) => ({
+      formula: sanitizeTeachingLine(item.formula, ""),
+      meaning: sanitizeTeachingLine(item.meaning, ""),
+      units: sanitizeTeachingLine(item.units, ""),
+    }))
+    .filter((item) => item.formula.length > 0 || item.meaning.length > 0);
+  const workedExamples = analysis.workedExamples
+    .map((item) => ({
+      title: sanitizeTeachingLine(item.title, ""),
+      problem: sanitizeTeachingLine(item.problem, ""),
+      steps: sanitizeTeachingLine(item.steps, ""),
+    }))
+    .filter((item) => item.problem.length > 0 || item.steps.length > 0);
+  const visuals = sanitizeList(
+    [
+      ...analysis.diagrams.map((item) => item.description),
+      ...analysis.tables.map((item) => item.description),
+    ],
+    6,
   );
-  const additionalCoverageSummary = sanitizeTeachingLine(
-    firstNonEmpty(
-      analysis.additionalExamCoverage[0],
-      `Additional same-topic exam support for ${mainTopic} with a clear application and reasoning focus.`,
+  const commonMistakes = sanitizeList(analysis.commonMistakes, 6);
+  const examPoints = sanitizeList(analysis.examPoints, 6);
+  const revisionPoints = sanitizeList(analysis.revisionPoints, 6);
+  const additionalCoverage = sanitizeList(analysis.additionalExamCoverage, 6);
+
+  pushCard(
+    cards,
+    makeCard(
+      `${mainTopic} — Source Content`,
+      firstNonEmpty(sourceContent[0], definitions[0]),
+      sourceContent.slice(0, 5),
     ),
-    `Additional same-topic exam support for ${mainTopic} with a clear application and reasoning focus.`,
   );
 
-  const sourceContentCard = cards.find((card) => /source content/i.test(card.title) || /source content/i.test(card.explanation));
-  if (!sourceContentCard) {
-    cards.push(
-      makeCard(
-        `${mainTopic} — Source Content`,
-        sourceContentSummary,
-        analysis.sourceContent.slice(0, 4).length > 0
-          ? analysis.sourceContent.slice(0, 4).map((item) => sanitizeTeachingLine(item, `Understand the main idea of ${mainTopic} from the source.`))
-          : ["The key idea from the source is stated clearly.", "Only support claims that are directly linked to the source material."],
-      ),
-    );
-  }
+  pushCard(
+    cards,
+    makeCard(
+      `${mainTopic} — Concept & Definition`,
+      firstNonEmpty(definitions[0], sourceContent[0]),
+      [...definitions.slice(1), ...revisionPoints].slice(0, 5),
+    ),
+  );
 
-  const additionalCoverageCard = cards.find((card) => /additional exam coverage/i.test(card.title) || /additional exam coverage/i.test(card.explanation));
-  if (!additionalCoverageCard) {
-    cards.push(
-      makeCard(
-        `${mainTopic} — Important Additional Exam Coverage`,
-        additionalCoverageSummary,
-        analysis.additionalExamCoverage.slice(0, 4).length > 0
-          ? analysis.additionalExamCoverage.slice(0, 4).map((item) => sanitizeTeachingLine(item, `This topic is strengthened by realistic application and reasoning questions.`))
-          : ["Explain the concept in a classroom-friendly way.", "Apply the idea to a real example.", "Check the answer with a short reasoning step."],
-      ),
-    );
-  }
-
-  const conceptCard = cards.find((card) => REQUIRED_CARD_PATTERNS[0].test(card.title) || /definition|concept|overview/i.test(card.explanation));
-  if (!conceptCard) {
-    cards.push(
-      makeCard(
-        `${mainTopic} — Concept & Definition`,
-        firstNonEmpty(analysis.definitions[0]?.text, analysis.sourceContent[0], `Core definition and understanding of ${mainTopic}.`),
-        analysis.revisionPoints.slice(0, 4),
-      ),
-    );
-  }
-
-  const formulaCard = cards.find((card) => REQUIRED_CARD_PATTERNS[1].test(card.title) || /formula|equation|law|principle/i.test(card.explanation || ""));
-  if (!formulaCard) {
-    const formula = analysis.formulae[0]?.formula || "Identify the key formula/equation from chapter context.";
-    const meaning = analysis.formulae[0]?.meaning || "Explain what the formula represents and how it is used.";
-    cards.push(
+  if (formulae.length > 0) {
+    const firstFormula = formulae[0];
+    pushCard(
+      cards,
       makeCard(
         `${mainTopic} — Formula & Meaning`,
-        buildFormulaSummary(formula, meaning),
+        buildFormulaSummary(firstFormula.formula, firstFormula.meaning),
         [
-          "State the formula clearly.",
-          "Explain each variable and its meaning.",
-          "Link the formula to the relevant worked example.",
-        ],
-        { formula },
+          firstFormula.units ? `Units: ${firstFormula.units}` : "",
+          ...formulae.slice(1).map((item) => item.formula),
+        ].filter(Boolean),
+        { formula: firstFormula.formula },
       ),
     );
   }
 
-  const exampleCard = cards.find((card) => REQUIRED_CARD_PATTERNS[2].test(card.title) || /example|worked|problem|application/i.test(card.explanation || ""));
-  if (!exampleCard) {
-    cards.push(
+  if (workedExamples.length > 0) {
+    const firstExample = workedExamples[0];
+    pushCard(
+      cards,
       makeCard(
         `${mainTopic} — Worked Example`,
-        sanitizeTeachingLine(
-          firstNonEmpty(
-            analysis.workedExamples[0]?.problem,
-            analysis.sourceContent.find((value) => /example|problem|solve|calculate/i.test(value)) || `Apply the key formula to a worked example involving ${mainTopic}.`,
-          ),
-          `Apply the key formula to a worked example involving ${mainTopic}.`,
-        ),
-        [
-          sanitizeTeachingLine(
-            firstNonEmpty(analysis.workedExamples[0]?.steps, "Write the known values, substitute into the formula, solve carefully, and state the final answer."),
-            "Write the known values, substitute into the formula, solve carefully, and state the final answer.",
-          ),
-          "Show the reasoning step by step.",
-          "Check units and final result before concluding.",
-        ],
-        { example: analysis.workedExamples[0]?.steps || "Write the known values, substitute into the formula, solve carefully, and state the final answer." },
+        firstNonEmpty(firstExample.problem, sourceContent.find((value) => /example|problem|solve|calculate/i.test(value))),
+        [firstExample.steps, ...workedExamples.slice(1).map((item) => firstNonEmpty(item.problem, item.steps))].filter(Boolean),
+        { example: firstNonEmpty(firstExample.steps, firstExample.problem) },
       ),
     );
   }
 
-  const visualCard = cards.find((card) => REQUIRED_CARD_PATTERNS[3].test(card.title) || /visual|diagram|map|graph|table|flowchart/i.test(card.explanation || ""));
-  if (!visualCard) {
-    cards.push(
+  if (visuals.length > 0) {
+    pushCard(
+      cards,
       makeCard(
-        `${mainTopic} — Diagram / Visual Map`,
-        sanitizeTeachingLine(
-          firstNonEmpty(analysis.diagrams[0]?.description, analysis.tables[0]?.description, "The diagram labels the key parts and shows how they are related."),
-          "The diagram labels the key parts and shows how they are related.",
-        ),
-        [
-          "Label the important parts clearly.",
-          "Show relationships or sequence visually.",
-          "Tie the diagram back to the formula or concept.",
-        ],
-        { diagram: analysis.diagrams[0]?.description || "The diagram labels the key parts and shows how they are related." },
+        `${mainTopic} — Diagram / Visual Explanation`,
+        visuals[0],
+        visuals.slice(1, 6),
+        { diagram: visuals[0] },
       ),
     );
   }
 
-  const mistakeCard = cards.find((card) => REQUIRED_CARD_PATTERNS[4].test(card.title) || /mistake|error|trap|common/i.test(card.explanation || ""));
-  if (!mistakeCard) {
-    cards.push(
+  if (commonMistakes.length > 0) {
+    pushCard(
+      cards,
       makeCard(
         `${mainTopic} — Common Mistakes`,
-        "Avoid the most common misunderstanding in this topic.",
-        (analysis.commonMistakes.length > 0 ? analysis.commonMistakes : [
-          "Confusing the formula variables.",
-          "Forgetting to include units or labels.",
-          "Skipping the logic check before finalising the answer.",
-        ]).slice(0, 5),
-        { commonMistake: analysis.commonMistakes[0] || "Do not skip the reasoning step." },
+        commonMistakes[0],
+        commonMistakes.slice(1, 6),
+        { commonMistake: commonMistakes[0] },
       ),
     );
   }
 
-  const examCard = cards.find((card) => REQUIRED_CARD_PATTERNS[5].test(card.title) || /exam|revision|summary|checklist/i.test(card.explanation || ""));
-  if (!examCard) {
-    cards.push(
+  if (examPoints.length > 0 || revisionPoints.length > 0) {
+    pushCard(
+      cards,
       makeCard(
         `${mainTopic} — Exam Importance & Revision`,
-        firstNonEmpty(analysis.examPoints[0], analysis.additionalExamCoverage[0], "This topic is important because it combines concept recall, formula use, and application-based reasoning."),
-        [
-          "List the key idea, formula, and likely question type.",
-          "Note the most common exam patterns.",
-          "Revise definitions, formula use and worked examples before the exam.",
-        ],
-        { examImportance: analysis.examPoints.join(" | ") || "Revision and exam preparation checklist." },
+        firstNonEmpty(examPoints[0], revisionPoints[0]),
+        [...examPoints.slice(1), ...revisionPoints].slice(0, 6),
+        { examImportance: examPoints.join(" | ") },
       ),
     );
   }
 
-  if (cards.length < 7) {
-    cards.push(
+  if (additionalCoverage.length > 0) {
+    pushCard(
+      cards,
       makeCard(
         `${mainTopic} — Additional Exam Coverage`,
-        sanitizeTeachingLine(
-          firstNonEmpty(
-            analysis.additionalExamCoverage[0],
-            `This topic is strengthened by additional application, reasoning, and quick recall practice in ${mainTopic}.`,
-          ),
-          `This topic is strengthened by additional application, reasoning, and quick recall practice in ${mainTopic}.`,
-        ),
-        analysis.additionalExamCoverage.slice(0, 4).map((item) => sanitizeTeachingLine(item, `Apply the concept in a different context and explain the reasoning clearly.`)),
-      ),
-    );
-  }
-
-  if (cards.length < 7) {
-    cards.push(
-      makeCard(
-        `${mainTopic} — Real-life Example`,
-        "Connect the concept to a real classroom or daily-life application.",
-        [
-          "Explain the concept in plain language.",
-          "Link the theory to a practical situation.",
-          "Make the learning memorable for students.",
-        ],
-      ),
-    );
-  }
-
-  if (cards.length < 7) {
-    cards.push(
-      makeCard(
-        `${mainTopic} — Logical Flow`,
-        "Show the logical sequence of ideas in a student-friendly order.",
-        [
-          "Start with the core idea.",
-          "Introduce the formula or principle.",
-          "Follow with a solved example and a quick check.",
-        ],
+        additionalCoverage[0],
+        additionalCoverage.slice(1, 6),
       ),
     );
   }
@@ -290,23 +293,15 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
     return arr.findIndex((candidate) => `${candidate.title}|${candidate.explanation}` === key) === index;
   });
 
-  if (deduped.length >= 7) {
-    return deduped.slice(0, Math.max(7, Math.min(12, deduped.length)));
+  if (deduped.length > 0) {
+    return deduped.slice(0, 12);
   }
 
-  while (deduped.length < 7) {
-    deduped.push(
-      makeCard(
-        `${mainTopic} — Learning Check ${deduped.length + 1}`,
-        "Add a compact review card to maintain complete teaching coverage.",
-        [
-          "State the main idea in one sentence.",
-          "Mention a formula or diagram if relevant.",
-          "Finish with one quick revision prompt.",
-        ],
-      ),
-    );
-  }
+  const fallback = makeCard(
+    `${mainTopic} — Source Content`,
+    firstNonEmpty(sourceContent[0], definitions[0], "Source understanding is insufficient to build teaching cards. Re-analyze with a clearer master image."),
+    sourceContent.slice(1, 5),
+  );
 
-  return deduped.slice(0, 12);
+  return isUsableCard(fallback) ? [fallback] : [];
 }
