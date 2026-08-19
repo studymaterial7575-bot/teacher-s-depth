@@ -1053,10 +1053,10 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
 
         const payload = (await res.json()) as { dataUrl: string };
         dataUrl = payload.dataUrl;
-        notice = "Master teaching image generated using AI image model.";
+        notice = "Master teaching image generated using local prompt-builder rendering.";
       } catch {
         dataUrl = await generateLocalTeachingImageDataUrl(extracted, teachingResponse || prompt);
-        notice = "AI image service unavailable. Generated a local comprehensive master teaching image from current teaching response.";
+        notice = "Generated a local comprehensive master teaching image from current teaching response.";
       }
 
       const file = dataUrlToFile(dataUrl, `master-learning-image-${Date.now()}.png`);
@@ -1066,7 +1066,7 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       setMasterImageUrl(dataUrl);
       setMasterImageMeta(meta);
       await saveMasterTeachingImage(file);
-      setWorkflowNotice(`${notice} Running automatic AI understanding and disintegration...`);
+      setWorkflowNotice(`${notice} Running automatic structured disintegration...`);
       await runAutomaticDisintegration({ file, dataUrl, origin: "generated" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to generate teaching image.";
@@ -1090,7 +1090,7 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       setMasterImageUrl(url);
       setMasterImageMeta(meta);
       await saveMasterTeachingImage(selected);
-      setWorkflowNotice("Master teaching image imported successfully. Running automatic AI understanding and disintegration...");
+      setWorkflowNotice("Master teaching image imported successfully. Running automatic structured disintegration...");
       await runAutomaticDisintegration({ file: selected, dataUrl: url, origin: "imported" });
     } catch {
       setWorkflowError("Unable to read selected image.");
@@ -1170,14 +1170,14 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       };
       setAnalysis(nextAnalysis);
       if (!options?.suppressNotice) {
-        setWorkflowNotice("Master image analyzed with AI structural understanding.");
+        setWorkflowNotice("Master image structurally analyzed using prompt-builder local workflow.");
       }
       return nextAnalysis;
     } catch (error) {
       const localAnalysis = buildFallbackTeachingImageAnalysis(extracted, teachingResponse || imageSpec || prompt);
       setAnalysis(localAnalysis);
       if (!options?.suppressNotice) {
-        setWorkflowNotice("AI analysis unavailable. Applied local structural disintegration from current project context.");
+        setWorkflowNotice("Applied local structural disintegration from current project context.");
       }
       return localAnalysis;
     } finally {
@@ -1410,9 +1410,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       label: "STEP 1 SOURCE MATERIAL -> OCR/SOURCE EXTRACTION",
       done: step1Done,
     },
-    { label: "STEP 2 AI TEACHING RESPONSE", done: step2Done },
+    { label: "STEP 2 EXTERNAL AI TEACHING RESPONSE", done: step2Done },
     { label: "STEP 3 CREATE MASTER TEACHING IMAGE", done: step3Done },
-    { label: "STEP 4 MASTER IMAGE AI UNDERSTANDING", done: step4Done },
+    { label: "STEP 4 MASTER IMAGE STRUCTURED UNDERSTANDING", done: step4Done },
     { label: "STEP 5 TOPIC DISINTEGRATION", done: step5Done },
     { label: "STEP 6 TEACHING DECK", done: step6Done },
     { label: "STEP 7 EXPORT", done: step7Done },
@@ -1432,7 +1432,7 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         </div>
         <div className="rounded-xl border border-dashed border-border bg-background/40 p-3 text-xs text-foreground">
           <p className="font-semibold uppercase tracking-[0.15em] text-muted-foreground">Master Image Model</p>
-          <p className="mt-2">MASTER TEACHING IMAGE -&gt; AI EDUCATIONAL DISINTEGRATION</p>
+          <p className="mt-2">MASTER TEACHING IMAGE -&gt; LOCAL STRUCTURED DISINTEGRATION</p>
         </div>
       </div>
 
@@ -1496,11 +1496,11 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         </div>
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 2 - AI Teaching Response</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 2 - External AI Teaching Response</div>
           <textarea
             value={teachingResponse}
             onChange={(event) => setTeachingResponse(event.target.value)}
-            placeholder="Paste the AI teaching response here after prompt execution."
+            placeholder="Paste the external AI teaching response here after prompt execution."
             className="min-h-32 w-full rounded-xl border border-border bg-background/70 px-3 py-2 text-sm text-foreground outline-none"
           />
         </div>
@@ -1513,7 +1513,7 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
               onClick={onCreateImageSpec}
               className="rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground"
             >
-              Build AI Image Prompt
+              Build Image Prompt
             </button>
             <button
               type="button"
@@ -1526,7 +1526,7 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
               disabled={!imageSpec.trim()}
               className="rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground disabled:opacity-50"
             >
-              Copy Prompt for ChatGPT Image Generation
+              Copy Prompt for External Image Generation
             </button>
             <button
               type="button"
@@ -1609,7 +1609,7 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         </div>
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 5 - AI Understanding</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 5 - Structured Understanding</div>
           <button
             type="button"
             onClick={() => void onAnalyzeImage()}

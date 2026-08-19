@@ -7,8 +7,8 @@ import { SUBJECTS, type AnalysisResult, type Subject } from "@/components/compan
 export const Route = createFileRoute("/companion")({
   head: () => ({
     meta: [
-      { title: "AI Depth — Teacher's Depth" },
-      { name: "description", content: "Upload a PDF or screenshot — get 7 tabs of depth from AI." },
+      { title: "Companion Depth — Teacher's Depth" },
+      { name: "description", content: "Upload a PDF or screenshot and build a classroom-ready depth structure for external AI handoff." },
     ],
   }),
   component: CompanionPage,
@@ -61,7 +61,7 @@ function CompanionPage() {
   }
 
   return (
-    <AppShell back={{ to: "/" }} title="AI Depth">
+    <AppShell back={{ to: "/" }} title="Companion Depth">
       {!result && (
         <section className="space-y-5">
           <div>

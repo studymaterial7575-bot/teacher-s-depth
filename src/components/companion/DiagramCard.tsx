@@ -49,7 +49,7 @@ export function DiagramCard({ d }: { d: DiagramItem }) {
           disabled={loading}
           className="rounded-full border border-border bg-secondary px-3 py-1.5 text-xs text-secondary-foreground transition hover:bg-secondary/70 disabled:opacity-50"
         >
-          {loading ? "Rendering image…" : imgUrl ? "Regenerate image" : "Image fallback"}
+          {loading ? "Rendering image…" : imgUrl ? "Render again" : "Render local image"}
         </button>
         {imgUrl && (
           <button

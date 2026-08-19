@@ -90,10 +90,8 @@ Important:
 
 Use `.env.example` as reference. Do not commit real secrets.
 
-- `GEMINI_API_KEY`
-  - Required for AI companion analysis and remote diagram/image-analysis APIs.
-  - Must be configured in hosting platform environment settings.
-  - Must remain server-side only.
+- No paid AI API key is required for normal Teacher's Depth usage.
+- Optional deployment/runtime variables may still be used for hosting concerns (for example, `NITRO_PRESET`).
 
 ### Authentication readiness (no fake login)
 
@@ -113,7 +111,6 @@ Recommended platform: Vercel (repository can remain private).
 
 1. Connect private GitHub repository to Vercel.
 2. In Vercel Project Settings -> Environment Variables, add:
-	- `GEMINI_API_KEY`
 	- `NITRO_PRESET=vercel`
 3. Keep build command as:
 	- `npm run build`

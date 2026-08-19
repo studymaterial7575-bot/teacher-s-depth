@@ -29,40 +29,8 @@ export const Route = createFileRoute("/api/diagram-image")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const key = process.env.GEMINI_API_KEY;
         const { prompt } = (await request.json()) as { prompt: string };
-
-        if (!key) {
-          return Response.json({ dataUrl: makeFallbackImageDataUrl(prompt) });
-        }
-
-        const upstream = await fetch(
-          "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-            body: JSON.stringify({
-              contents: [
-                {
-                  role: "user",
-                  parts: [
-                    {
-                      text: `Clean educational diagram on a dark background with bright, clearly labeled elements. ${prompt}`,
-                    },
-                  ],
-                },
-              ],
-              generationConfig: { responseModalities: ["IMAGE"] },
-            }),
-          },
-        );
-        if (!upstream.ok) {
-          return Response.json({ dataUrl: makeFallbackImageDataUrl(prompt) });
-        }
-        const data = (await upstream.json()) as any;
-        const b64 = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (!b64) return Response.json({ dataUrl: makeFallbackImageDataUrl(prompt) });
-        return Response.json({ dataUrl: `data:image/png;base64,${b64}` });
+        return Response.json({ dataUrl: makeFallbackImageDataUrl(prompt) });
       },
     },
   },
