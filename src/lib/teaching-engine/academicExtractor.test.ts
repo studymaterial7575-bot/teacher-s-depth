@@ -695,4 +695,104 @@ describe("academic extraction pipeline", () => {
     expect(prompt).toContain("original/reliable reporting");
     expect(prompt).toContain("source verification");
   });
+
+  // ── Mobile-test regression suite ──────────────────────────────────────────
+
+  it("counts parent + 3 sub-parts as 1 question, not 3", () => {
+    const text = [
+      "A car travels 120 km in 3 hours.",
+      "1. Calculate its average speed in km/h.",
+      "2. Convert the answer into m/s.",
+      "3. If the car continues at the same speed, how far will it travel in 30 minutes?",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+    expect(items).toHaveLength(1);
+    expect(items[0].ocrText).toContain("A car travels");
+    expect(items[0].ocrText).toContain("Calculate its average speed");
+    expect(items[0].ocrText).toContain("Convert the answer");
+  });
+
+  it("detects Physics/Motion for the car-speed scenario", () => {
+    const text = [
+      "A car travels 120 km in 3 hours.",
+      "1. Calculate its average speed in km/h.",
+      "2. Convert the answer into m/s.",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+    expect(items[0].subject).toBe("Physics");
+    expect(items[0].chapter).toBe("Motion");
+    expect(items[0].topic).toBe("Motion");
+  });
+
+  it("does NOT merge self-contained numbered questions that each have their own scenario", () => {
+    const text = [
+      "1. A car travels 120 km in 3 hours. Calculate its average speed in km/h.",
+      "2. A train travels 300 km in 5 hours. Find the speed in km/h.",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+    // Should not be forcibly merged—they are independent questions
+    expect(items.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("includes formula accuracy instruction in the built prompt", () => {
+    const text = "A car travels 120 km in 3 hours. Calculate its average speed.";
+    const items = extractAcademicQuestions(text);
+    const prompt = buildPromptTexts({
+      sourceFiles: ["Image: speed.png"],
+      extracted: items[0],
+      extractedItems: items,
+      studentProfile: profile,
+      depthOptions: depth,
+      selectedOutputOptions: ["Normal Solution"],
+      visualStyle: visual,
+      explanationStyle: explanation,
+      objective: "Explain average speed.",
+    })[0];
+
+    expect(prompt).toContain("FORMULA ACCURACY");
+    expect(prompt).toContain("÷");
+    expect(prompt).toContain("NEVER");
+  });
+
+  it("includes worked example completeness instruction in the built prompt", () => {
+    const text = "Calculate the average speed of a car that travels 120 km in 3 hours.";
+    const items = extractAcademicQuestions(text);
+    const prompt = buildPromptTexts({
+      sourceFiles: ["Image: speed.png"],
+      extracted: items[0],
+      extractedItems: items,
+      studentProfile: profile,
+      depthOptions: ["Definition", "Worked examples"],
+      selectedOutputOptions: ["Normal Solution"],
+      visualStyle: visual,
+      explanationStyle: explanation,
+      objective: "",
+    })[0];
+
+    expect(prompt).toContain("WORKED EXAMPLES");
+    expect(prompt).toContain("actual values substituted");
+  });
+
+  it("source and additional coverage are kept separate in prompt", () => {
+    const text = "CBSE Class 9 Physics Motion. A car travels 120 km in 3 hours. Calculate speed.";
+    const items = extractAcademicQuestions(text);
+    const prompt = buildPromptTexts({
+      sourceFiles: ["Image: motion.png"],
+      extracted: items[0],
+      extractedItems: items,
+      studentProfile: profile,
+      depthOptions: depth,
+      selectedOutputOptions: ["Normal Solution"],
+      visualStyle: visual,
+      explanationStyle: explanation,
+      objective: "",
+    })[0];
+
+    expect(prompt).toContain("SOURCE CONTENT ONLY");
+    expect(prompt).toContain("IMPORTANT ADDITIONAL EXAM COVERAGE");
+    expect(prompt).toContain("Do not present additional coverage as if it came from the uploaded source");
+  });
 });

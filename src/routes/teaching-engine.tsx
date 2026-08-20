@@ -6,10 +6,12 @@ import { MasterImageWorkflow } from "@/components/teaching-engine/MasterImageWor
 import { PromptPreview } from "@/components/teaching-engine/PromptPreview";
 import { extractAcademicQuestions } from "@/lib/teaching-engine/academicExtractor";
 import {
+  detectOcrGarbage,
   filterRelevantFormulaeByContext,
   isUnknownLikeValue,
   pickKnownValue,
   sanitizeEducationalText,
+  sanitizeTeacherRequirement,
 } from "@/lib/teaching-engine/contentIntegrity";
 import { getAutoRelevantOutputOptions } from "@/lib/teaching-engine/outputSelection";
 import { buildAiPackageText } from "@/lib/teaching-engine/aiPackage";
@@ -768,6 +770,25 @@ function getActionableExtractedItems(items: ExtractedContent[]) {
   return items.filter(isMeaningfulExtracted);
 }
 
+function isMeaningfulEducationalText(text: string) {
+  const cleaned = sanitizeEducationalText(text);
+  if (cleaned.length < 24) return false;
+
+  const tokenCount = cleaned
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => /[a-z0-9]/i.test(token)).length;
+
+  if (tokenCount < 5) return false;
+
+  const hasAcademicKeyword = /\b(class|grade|std|board|chapter|topic|exercise|question|concept|definition|formula|theorem|explain|calculate|solve|convert|derive|distance|time|speed|velocity|acceleration|history|geography|physics|chemistry|biology|mathematics|science|grammar)\b/i.test(cleaned);
+  const hasStructuredProblemSignal = /\b\d+\s*(?:km|m|cm|mm|kg|g|s|min|hr|h|%)\b/i.test(cleaned) ||
+    /[A-Za-z][A-Za-z0-9_]*\s*=\s*[^=\n]+/.test(cleaned) ||
+    /^\s*\d+[).:-]\s+/m.test(cleaned);
+
+  return hasAcademicKeyword || hasStructuredProblemSignal;
+}
+
 function knownValueScore(value: string | undefined) {
   return !isUnknownLikeValue(value) ? 1 : 0;
 }
@@ -880,8 +901,9 @@ function getSourceExtractionContext(params: {
 
   const hasGoodTextLength = ocrText.trim().length >= 180;
   const hasSignals = metadataSignals >= 2 || extracted.formulae.length > 0 || extracted.diagrams.length > 0;
+  const garbageCheck = detectOcrGarbage(ocrText);
 
-  if (hasText && hasGoodTextLength && hasSignals) {
+  if (hasText && hasGoodTextLength && hasSignals && !garbageCheck.hasGarbage) {
     return {
       sourceFiles,
       extractedText: ocrText,
@@ -904,12 +926,15 @@ function getSourceExtractionContext(params: {
   }
 
   if (hasText) {
+    const garbageNote = garbageCheck.hasGarbage
+      ? ` OCR may contain noise (e.g. ${garbageCheck.examples.join(", ")}). Please verify and clean the extracted text.`
+      : " Please verify and edit extracted text before continuing.";
     return {
       sourceFiles,
       extractedText: ocrText,
       extractionStage: "needs-review",
       confidenceLabel: "Medium",
-      confidenceNote: "OCR confidence may be low. Please verify and edit extracted text before continuing.",
+      confidenceNote: `OCR confidence may be low.${garbageNote}`,
       metadata: {
         subject: extracted.subject,
         classLevel: extracted.classLevel,
@@ -1005,6 +1030,7 @@ function RouteComponent() {
   const uploadAnotherInputRef = useRef<HTMLInputElement>(null);
   const autoOpenedEntryRef = useRef<string | null>(null);
   const activeProcessingRef = useRef<{ id: number; controller: AbortController } | null>(null);
+  const copiedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sourceFiles = useMemo(
     () => files.map((file) => `${getFileTag(file.name)}: ${file.name}`),
@@ -1060,11 +1086,6 @@ function RouteComponent() {
       estimatedReadingTime: readingRange,
     };
   }, [actionableExtractedItems, explanationStyle, files.length, selectedOutputOptions, studentProfile, visualStyle]);
-
-  const hasAcademicContent = useMemo(
-    () => actionableExtractedItems.length > 0,
-    [actionableExtractedItems],
-  );
 
   const sourceExtractionContext = useMemo(
     () =>
@@ -1327,6 +1348,12 @@ function RouteComponent() {
           setExtractedItems(nextItems);
           setExtracted(primary ?? actionableItems[0]);
           setWorkflowStep("ocr");
+        } else if (isMeaningfulEducationalText(freshText)) {
+          const inferred = inferExtractedContent(freshText);
+          const fallback: ExtractedContent = { ...DEFAULT_EXTRACTED, ...inferred, ocrText: freshText, cleanedOcrText: freshText };
+          setExtractedItems([fallback]);
+          setExtracted(fallback);
+          setWorkflowStep("ocr");
         } else {
           setExtractedItems(nextItems);
           setExtracted(DEFAULT_EXTRACTED);
@@ -1425,6 +1452,11 @@ function RouteComponent() {
       const primary = selectPrimaryExtracted(actionableItems);
       setExtractedItems(nextItems);
       setExtracted(primary ?? actionableItems[0]);
+    } else if (isMeaningfulEducationalText(freshText)) {
+      const inferred = inferExtractedContent(freshText);
+      const fallback: ExtractedContent = { ...DEFAULT_EXTRACTED, ...inferred, ocrText: freshText, cleanedOcrText: freshText };
+      setExtractedItems([fallback]);
+      setExtracted(fallback);
     } else {
       setExtractedItems(nextItems);
       setExtracted(DEFAULT_EXTRACTED);
@@ -1438,6 +1470,37 @@ function RouteComponent() {
   }
 
   async function buildPrompt() {
+    const normalizedOcrText = sanitizeEducationalText(deduplicateOcrTextBlocks(ocrText));
+    const runtimeExtractedItems = normalizedOcrText ? extractAcademicQuestions(normalizedOcrText) : [];
+    const runtimeActionableItems = getActionableExtractedItems(runtimeExtractedItems);
+
+    let promptSourceItems = actionableExtractedItems;
+    let promptPrimary = extracted;
+
+    if (promptSourceItems.length === 0 && runtimeActionableItems.length > 0) {
+      const primary = selectPrimaryExtracted(runtimeActionableItems);
+      promptSourceItems = runtimeActionableItems;
+      promptPrimary = primary ?? runtimeActionableItems[0];
+      setExtractedItems(runtimeExtractedItems);
+      setExtracted(promptPrimary);
+    }
+
+    if (promptSourceItems.length === 0 && isMeaningfulEducationalText(normalizedOcrText)) {
+      const inferred = inferExtractedContent(normalizedOcrText);
+      const fallbackExtracted: ExtractedContent = {
+        ...DEFAULT_EXTRACTED,
+        ...inferred,
+        ocrText: normalizedOcrText,
+        cleanedOcrText: normalizedOcrText,
+      };
+      promptSourceItems = [fallbackExtracted];
+      promptPrimary = fallbackExtracted;
+      setExtractedItems([fallbackExtracted]);
+      setExtracted(fallbackExtracted);
+    }
+
+    const effectiveOcrText = normalizedOcrText || ocrText;
+
     setIsBuildingPrompt(true);
     setBuildStatus("Analyzing classroom content...");
     setBuildSuccess(null);
@@ -1453,7 +1516,7 @@ function RouteComponent() {
     })) as BuildStage[];
     setBuildStages(initialStages);
 
-    if (!hasAcademicContent) {
+    if (promptSourceItems.length === 0) {
       setPrompt("");
       setIsBuildingPrompt(false);
       setBuildStatus(null);
@@ -1480,23 +1543,24 @@ function RouteComponent() {
         await delay(360);
       }
 
-      const nextExtractedItems = actionableExtractedItems.length > 0
-        ? actionableExtractedItems.map((item) => ({
+      const nextExtractedItems = promptSourceItems.length > 0
+        ? promptSourceItems.map((item) => ({
             ...item,
-            ocrText: item.ocrText || ocrText || "",
-            cleanedOcrText: item.cleanedOcrText ?? (item.ocrText || ocrText || ""),
+            ocrText: item.ocrText || effectiveOcrText || "",
+            cleanedOcrText: item.cleanedOcrText ?? (item.ocrText || effectiveOcrText || ""),
           }))
         : [{
-            ...extracted,
-            ocrText: ocrText || extracted.ocrText || "",
-            cleanedOcrText: extracted.cleanedOcrText ?? (extracted.ocrText || ocrText || ""),
+            ...promptPrimary,
+            ocrText: effectiveOcrText || promptPrimary.ocrText || "",
+            cleanedOcrText: promptPrimary.cleanedOcrText ?? (promptPrimary.ocrText || effectiveOcrText || ""),
           }];
 
       const nextPrompts = buildPromptTexts({
         sourceFiles,
         extracted: {
-          ...extracted,
-          ocrText,
+          ...promptPrimary,
+          ocrText: effectiveOcrText,
+          cleanedOcrText: promptPrimary.cleanedOcrText ?? effectiveOcrText,
         },
         extractedItems: nextExtractedItems,
         studentProfile,
@@ -1504,7 +1568,7 @@ function RouteComponent() {
         selectedOutputOptions,
         visualStyle,
         explanationStyle,
-        objective,
+        objective: sanitizeTeacherRequirement(objective) || DEFAULT_OBJECTIVE,
       });
 
       const nextPrompt = nextPrompts.length <= 1
@@ -1626,13 +1690,38 @@ function RouteComponent() {
   }
 
   async function copyPrompt() {
+    const textToCopy = getAiPackageText();
+    if (copiedResetRef.current) clearTimeout(copiedResetRef.current);
+
+    const finish = (success: boolean) => {
+      if (success) {
+        setCopied(true);
+        setAnnouncement("AI package copied to clipboard.");
+        copiedResetRef.current = setTimeout(() => setCopied(false), 2500);
+      } else {
+        setCopied(false);
+        setAnnouncement("Copy failed. Long-press the prompt text to copy manually.");
+      }
+    };
+
     try {
-      const aiPackageText = getAiPackageText();
-      await navigator.clipboard.writeText(aiPackageText);
-      setCopied(true);
-      setAnnouncement("AI package copied to clipboard.");
+      await navigator.clipboard.writeText(textToCopy);
+      finish(true);
     } catch {
-      setCopied(false);
+      // Fallback for browsers/contexts without clipboard API (e.g. mobile non-HTTPS)
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = textToCopy;
+        textarea.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        finish(ok);
+      } catch {
+        finish(false);
+      }
     }
   }
 

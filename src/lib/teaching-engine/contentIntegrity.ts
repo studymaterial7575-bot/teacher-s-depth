@@ -231,3 +231,44 @@ export function getContextAwareFallbackFormula(contextText: string) {
   if (ELECTRICITY_CONTEXT_PATTERN.test(context)) return "V = IR";
   return "";
 }
+
+// A "garbage fragment" is a short or symbol-only line unlikely to be real educational content.
+function isGarbageFragment(line: string): boolean {
+  const cleaned = normalizeLine(line);
+  if (!cleaned) return true;
+  if (isUiOrAppArtifactLine(cleaned)) return true;
+  if (/^[^a-zA-Z0-9]+$/.test(cleaned)) return true;
+  // ≤6-char line with no 3+ letter word AND no formula = sign → pure noise (e.g. "NZ", "& Si :")
+  if (cleaned.length <= 6 && !/[a-zA-Z]{3,}/.test(cleaned) && !cleaned.includes("=")) return true;
+  return false;
+}
+
+/**
+ * Scans OCR text for garbage fragments.  Returns a flag and up to 3 examples
+ * so the caller can downgrade confidence and show the user what needs review.
+ */
+export function detectOcrGarbage(text: string): { hasGarbage: boolean; examples: string[] } {
+  const lines = text.split(/\r?\n/).map(normalizeLine).filter(Boolean);
+  const examples: string[] = [];
+  for (const line of lines) {
+    if (isGarbageFragment(line)) {
+      const label = `"${line.slice(0, 20)}"`;
+      if (!examples.includes(label)) examples.push(label);
+      if (examples.length >= 3) break;
+    }
+  }
+  return { hasGarbage: examples.length > 0, examples };
+}
+
+/**
+ * Returns a cleaned teacher requirement string.
+ * Returns "" when the input is only OCR noise (very short, no real words).
+ */
+export function sanitizeTeacherRequirement(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (trimmed.length <= 4 && !/[a-zA-Z]{2,}/.test(trimmed)) return "";
+  const realWords = trimmed.split(/\s+/).filter((w) => /[a-zA-Z]{3,}/.test(w));
+  if (realWords.length === 0 && trimmed.length < 20) return "";
+  return trimmed;
+}

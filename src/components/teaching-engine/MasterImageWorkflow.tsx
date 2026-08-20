@@ -972,6 +972,8 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [workflowNotice, setWorkflowNotice] = useState<string | null>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const [imageCopied, setImageCopied] = useState(false);
+  const imageCopiedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resolvedExtracted = useMemo(
     () => resolveExtractedForWorkflow(extracted, sourceExtraction),
     [extracted, sourceExtraction],
@@ -1619,14 +1621,35 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
               type="button"
               onClick={() => {
                 if (!imageSpec.trim()) return;
-                navigator.clipboard.writeText(imageSpec).catch(() => {
-                  // Ignore clipboard failures.
-                });
+                if (imageCopiedResetRef.current) clearTimeout(imageCopiedResetRef.current);
+                const finish = (ok: boolean) => {
+                  setImageCopied(ok);
+                  if (ok) imageCopiedResetRef.current = setTimeout(() => setImageCopied(false), 2500);
+                };
+                navigator.clipboard.writeText(imageSpec).then(
+                  () => finish(true),
+                  () => {
+                    // Fallback for non-HTTPS / restricted browser contexts
+                    try {
+                      const ta = document.createElement("textarea");
+                      ta.value = imageSpec;
+                      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+                      document.body.appendChild(ta);
+                      ta.focus();
+                      ta.select();
+                      const ok = document.execCommand("copy");
+                      document.body.removeChild(ta);
+                      finish(ok);
+                    } catch {
+                      finish(false);
+                    }
+                  },
+                );
               }}
               disabled={!imageSpec.trim()}
               className="rounded-xl border border-border bg-card/70 px-3 py-2 text-sm text-foreground disabled:opacity-50"
             >
-              Copy Prompt for External Image Generation
+              {imageCopied ? "✓ Copied!" : "Copy Prompt for External Image Generation"}
             </button>
             <button
               type="button"

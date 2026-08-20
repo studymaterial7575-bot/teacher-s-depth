@@ -35,7 +35,7 @@ const SUBJECT_RULES: Record<SubjectKey, SubjectRule> = {
     topics: [
       { topic: "Ohm's Law", chapter: "Electricity", aliases: ["ohm", "ohm's law", "v = ir", "v=ir", "resistance", "current", "voltage"] },
       { topic: "Electric Circuit", chapter: "Electricity", aliases: ["circuit", "series circuit", "parallel circuit"] },
-      { topic: "Motion", chapter: "Motion", aliases: ["velocity", "acceleration", "displacement", "motion"] },
+      { topic: "Motion", chapter: "Motion", aliases: ["velocity", "acceleration", "displacement", "motion", "speed", "average speed", "distance", "km/h", "m/s", "kinematic", "uniform motion", "non-uniform motion"] },
       {
         topic: "Light / Spherical Mirrors",
         chapter: "Light - Reflection and Refraction",
@@ -445,6 +445,63 @@ function countKeywordOverlap(left: Set<string>, right: Set<string>) {
 
 function hasContinuationCue(block: string) {
   return /(?:^|\n)(continued|example|given|formula|therefore|answer|solution|important terms?|quick revision|common mistake)\b/i.test(block);
+}
+
+// Returns the leading integer of a numbered question/sub-part (e.g. "1." → 1, "2)" → 2), or null.
+function getLeadingNumber(block: string): number | null {
+  const first = (block.trimStart().split(/\r?\n/)[0] ?? "").trimStart();
+  const match = first.match(/^(\d{1,2})[).:]\s/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+// True when a block contains a cross-reference implying it depends on a preceding scenario.
+const BACK_REFERENCE_RE = /\b(its|the answer|the result|the same|continues?|from (the )?(above|previous)|refer(ring|s)? to)\b/i;
+
+// True when a block contains ≥2 physical quantities with units — i.e. it has its own embedded scenario.
+function hasOwnNumericalScenario(block: string): boolean {
+  const strippedNumber = block.replace(/^\d+[).:]\s*/, "");
+  const matches = strippedNumber.match(/\b\d+\s*(?:km|m|cm|mm|kg|g|mg|s|min|hours?|h\b|m\/s|km\/h|%)\b/gi);
+  return (matches?.length ?? 0) >= 2;
+}
+
+/**
+ * Merges a non-numbered scenario block with the numbered sub-part sequence that follows it
+ * (1., 2., 3. …) when those sub-parts clearly belong to the same parent question.
+ * This prevents each sub-part from being counted as an independent question.
+ */
+function consolidateSubParts(blocks: string[]): string[] {
+  if (blocks.length <= 2) return blocks;
+
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < blocks.length) {
+    // Only trigger when we find a non-numbered block (potential scenario)
+    if (getLeadingNumber(blocks[i]) === null) {
+      // Scan ahead for a consecutive numbered sequence 1, 2, 3, …
+      let j = i + 1;
+      let expected = 1;
+      while (j < blocks.length && getLeadingNumber(blocks[j]) === expected) {
+        j++;
+        expected++;
+      }
+      const subParts = blocks.slice(i + 1, j);
+      if (subParts.length >= 2) {
+        // Sub-parts qualify when they cross-reference context AND do NOT carry their own scenario
+        const hasBackRef = subParts.some((b) => BACK_REFERENCE_RE.test(b));
+        const noneHaveOwnScenario = !subParts.some(hasOwnNumericalScenario);
+        if (hasBackRef && noneHaveOwnScenario) {
+          result.push([blocks[i], ...subParts].join("\n"));
+          i = j;
+          continue;
+        }
+      }
+    }
+    result.push(blocks[i]);
+    i++;
+  }
+
+  return result;
 }
 
 function shouldMergeAdjacentBlocks(current: string, next: string) {
@@ -1030,7 +1087,7 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
   const hasTables = detectHasTables(cleanedForAnalysis);
   const hasExercises = detectHasExercises(cleanedForAnalysis);
   const examImportance = detectExamImportance(cleanedForAnalysis);
-  const blocks = mergeRelatedBlocks(splitIntoQuestionBlocks(cleanedForAnalysis));
+  const blocks = mergeRelatedBlocks(consolidateSubParts(splitIntoQuestionBlocks(cleanedForAnalysis)));
   const contextTextForFormulaFilter = `${boardGuess.value} ${classGuess.value} ${cleanedForAnalysis}`;
   const cleanedFormulaDetailsRaw = extractFormulaeDetailed(cleanedForAnalysis);
   const cleanedRelevantFormulae = filterRelevantFormulaeByContext(
