@@ -185,4 +185,96 @@ describe("ensureMinimumDisintegrationCards", () => {
     expect(joined).not.toMatch(/you are generating a teaching response|this is not a chatbot conversation|output formatting instructions|respond in exactly three sections/i);
     expect(cards.some((card) => /additional exam coverage/i.test(card.title))).toBe(true);
   });
+
+  it("filters mobile/browser contamination from teaching cards", () => {
+    const cards = ensureMinimumDisintegrationCards({
+      mainTopic: "Spherical Mirrors",
+      subtopics: ["Light - Reflection and Refraction"],
+      sourceContent: [
+        "20:14 (2 2 devices 1 \"SI @72%\"",
+        "Share a link to chat?",
+        "This creates a copy that others can chat with",
+        "Given f = 15 cm and R = 2f for spherical mirrors.",
+      ],
+      additionalExamCoverage: [
+        "Same-topic CBSE Class 10 mirror practice.",
+      ],
+      definitions: [{ title: "Definition", text: "A spherical mirror is part of a hollow sphere." }],
+      formulae: [{ formula: "R = 2f", meaning: "Radius of curvature is twice focal length.", units: "cm" }],
+      workedExamples: [{ title: "Worked Example", problem: "f = 15 cm", steps: "R = 2f = 30 cm" }],
+      diagrams: [{ title: "Mirror", description: "Label P, F and C." }],
+      tables: [],
+      importantFacts: [],
+      examPoints: ["Past-paper frequency unavailable."],
+      commonQuestionTypes: ["Numerical"],
+      commonMistakes: ["Do not confuse R and f."],
+      revisionPoints: ["R = 2f"],
+      cards: [],
+    });
+
+    const joined = cards.map((card) => `${card.title}\n${card.explanation}\n${card.keyPoints.join("\n")}`).join("\n");
+    expect(joined).not.toMatch(/20:14|2\s*devices|share a link to chat|copy that others can chat/i);
+    expect(joined).toContain("R = 2f");
+  });
+
+  it("preserves complete spherical-mirror worked example chain with explicit final answer", () => {
+    const cards = ensureMinimumDisintegrationCards({
+      mainTopic: "Light / Spherical Mirrors",
+      subtopics: ["Concave mirror", "Convex mirror", "Reflection and Refraction"],
+      sourceContent: [
+        "CBSE Class 10 Physics chapter context for spherical mirrors.",
+      ],
+      additionalExamCoverage: ["Same-topic mirror practice questions."],
+      definitions: [
+        { title: "Definition", text: "A spherical mirror is a part of a hollow sphere." },
+      ],
+      formulae: [
+        { formula: "R = 2f", meaning: "Radius of curvature is twice focal length.", units: "cm" },
+      ],
+      workedExamples: [
+        {
+          title: "Worked Example",
+          problem: "Find radius of curvature when focal length is 15 cm.",
+          steps: [
+            "Given:",
+            "f = 15 cm",
+            "Formula:",
+            "R = 2f",
+            "Substitution:",
+            "R = 2 × 15",
+            "Calculation:",
+            "R = 30 cm",
+            "Final Answer:",
+            "Radius of curvature = 30 cm",
+            "V = IR",
+          ].join("\n"),
+        },
+      ],
+      diagrams: [{ title: "Mirror Diagram", description: "Label P, F and C." }],
+      tables: [],
+      importantFacts: [],
+      examPoints: ["Practice numericals based on R = 2f."],
+      commonQuestionTypes: ["Numerical"],
+      commonMistakes: ["Do not confuse focal length and radius of curvature."],
+      revisionPoints: ["Use R = 2f for spherical mirrors."],
+      cards: [],
+    });
+
+    const workedCard = cards.find((card) => /worked example/i.test(card.title));
+    expect(workedCard).toBeDefined();
+
+    const workedText = [workedCard?.explanation ?? "", ...(workedCard?.keyPoints ?? []), workedCard?.example ?? ""].join("\n");
+
+    expect(workedText).toContain("Given:");
+    expect(workedText).toContain("f = 15 cm");
+    expect(workedText).toContain("Formula:");
+    expect(workedText).toContain("R = 2f");
+    expect(workedText).toContain("Substitution:");
+    expect(workedText).toContain("R = 2 × 15");
+    expect(workedText).toContain("Calculation:");
+    expect(workedText).toContain("R = 30 cm");
+    expect(workedText).toContain("Final Answer:");
+    expect(workedText).toContain("Radius of curvature = 30 cm");
+    expect(workedText).not.toMatch(/V\s*=\s*I\s*R/i);
+  });
 });

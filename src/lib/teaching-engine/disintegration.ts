@@ -1,4 +1,9 @@
 import type { TeachingCard, TeachingImageAnalysisResult } from "@/types/teaching-engine";
+import {
+  filterRelevantFormulaeByContext,
+  sanitizeEducationalLines,
+  sanitizeEducationalText,
+} from "@/lib/teaching-engine/contentIntegrity";
 
 const REQUIRED_CARD_PATTERNS = [
   /definition|concept|idea|overview/i,
@@ -70,7 +75,7 @@ function firstNonEmpty(...values: Array<string | undefined>) {
 }
 
 function sanitizeTeachingLine(value: string, fallback = "") {
-  const normalized = value.replace(/\s+/g, " ").trim();
+  const normalized = sanitizeEducationalText(value, 3).replace(/\s+/g, " ").trim();
   if (!normalized) return fallback;
   if (PROMPT_OR_METADATA_PATTERNS.some((pattern) => pattern.test(normalized))) {
     return fallback;
@@ -92,17 +97,34 @@ function hasEducationalSignal(value: string) {
 }
 
 function sanitizeList(values: string[], max = 6) {
-  const output: string[] = [];
-  for (const value of values) {
-    const clean = sanitizeTeachingLine(value, "");
-    if (!clean) continue;
-    if (!hasEducationalSignal(clean)) continue;
-    if (!output.includes(clean)) {
-      output.push(clean);
-    }
-    if (output.length >= max) break;
+  return sanitizeEducationalLines(values, max).filter((value) => hasEducationalSignal(value));
+}
+
+function extractWorkedExampleStepLines(value: string, relevantFormulae: string[]) {
+  const cleaned = sanitizeEducationalText(value, 12);
+  if (!cleaned) return [] as string[];
+
+  const allowOhmsLaw = relevantFormulae.some((formula) => /\bv\s*=\s*i\s*r\b/i.test(formula));
+  const lines = cleaned
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      if (allowOhmsLaw) return true;
+      return !/\bv\s*=\s*i\s*r\b/i.test(line);
+    });
+
+  const deduped: string[] = [];
+  for (const line of lines) {
+    if (!deduped.includes(line)) deduped.push(line);
+    if (deduped.length >= 10) break;
   }
-  return output;
+
+  return deduped;
+}
+
+function getWorkedExampleFinalAnswerLine(lines: string[]) {
+  return lines.find((line) => /^(final\s*answer|answer)\s*[:\-]/i.test(line)) || "";
 }
 
 function buildFormulaSummary(formula: string, meaning?: string) {
@@ -166,9 +188,15 @@ function pushCard(cards: TeachingCard[], card: TeachingCard) {
 export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysisResult): TeachingCard[] {
   const cards: TeachingCard[] = [];
   const mainTopic = firstNonEmpty(analysis.mainTopic, "Topic");
+  const formulaContext = `${analysis.mainTopic} ${analysis.subtopics.join(" ")} ${analysis.sourceContent.join(" ")}`;
   const sourceContent = sanitizeList(analysis.sourceContent, 8);
   const definitions = sanitizeList(analysis.definitions.map((item) => firstNonEmpty(item.text, item.title)), 5);
+  const relevantFormulae = filterRelevantFormulaeByContext(
+    analysis.formulae.map((item) => item.formula),
+    formulaContext,
+  );
   const formulae = analysis.formulae
+    .filter((item) => relevantFormulae.some((formula) => formula.toLowerCase() === item.formula.trim().toLowerCase()))
     .map((item) => ({
       formula: sanitizeTeachingLine(item.formula, ""),
       meaning: sanitizeTeachingLine(item.meaning, ""),
@@ -179,9 +207,13 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
     .map((item) => ({
       title: sanitizeTeachingLine(item.title, ""),
       problem: sanitizeTeachingLine(item.problem, ""),
-      steps: sanitizeTeachingLine(item.steps, ""),
+      stepLines: extractWorkedExampleStepLines(item.steps, relevantFormulae),
     }))
-    .filter((item) => item.problem.length > 0 || item.steps.length > 0);
+    .map((item) => ({
+      ...item,
+      finalAnswer: getWorkedExampleFinalAnswerLine(item.stepLines),
+    }))
+    .filter((item) => item.problem.length > 0 || item.stepLines.length > 0);
   const visuals = sanitizeList(
     [
       ...analysis.diagrams.map((item) => item.description),
@@ -230,13 +262,31 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
 
   if (workedExamples.length > 0) {
     const firstExample = workedExamples[0];
+    const workedExampleKeyPoints = [
+      ...firstExample.stepLines,
+      ...workedExamples.slice(1).flatMap((item) => item.stepLines.length > 0 ? item.stepLines : [firstNonEmpty(item.problem)]),
+    ].filter(Boolean);
+
+    if (firstExample.finalAnswer && !workedExampleKeyPoints.some((line) => line.toLowerCase() === firstExample.finalAnswer.toLowerCase())) {
+      workedExampleKeyPoints.push(firstExample.finalAnswer);
+    }
+
     pushCard(
       cards,
       makeCard(
         `${mainTopic} — Worked Example`,
-        firstNonEmpty(firstExample.problem, sourceContent.find((value) => /example|problem|solve|calculate/i.test(value))),
-        [firstExample.steps, ...workedExamples.slice(1).map((item) => firstNonEmpty(item.problem, item.steps))].filter(Boolean),
-        { example: firstNonEmpty(firstExample.steps, firstExample.problem) },
+        firstNonEmpty(
+          firstExample.problem,
+          sourceContent.find((value) => /example|problem|solve|calculate/i.test(value)),
+          firstExample.stepLines[0],
+        ),
+        workedExampleKeyPoints,
+        {
+          example: firstNonEmpty(
+            firstExample.stepLines.join("\n"),
+            firstExample.problem,
+          ),
+        },
       ),
     );
   }

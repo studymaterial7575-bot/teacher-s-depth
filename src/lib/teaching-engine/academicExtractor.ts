@@ -1,4 +1,9 @@
 import type { ExtractedContent, FormulaExtraction } from "@/types/teaching-engine";
+import {
+  filterRelevantFormulaeByContext,
+  isUiOrAppArtifactLine,
+  sanitizeEducationalText,
+} from "@/lib/teaching-engine/contentIntegrity";
 
 const UNKNOWN = "Unknown";
 const NOT_IDENTIFIED = "Not identified";
@@ -36,7 +41,7 @@ const SUBJECT_RULES: Record<SubjectKey, SubjectRule> = {
         chapter: "Light - Reflection and Refraction",
         concept: "Concave/Convex Mirror",
         aliases: [
-          "spherical mirror", "concave", "convex", "focus", "focal length", "centre of curvature", "center of curvature",
+          "spherical mirror", "spherical mirrors", "concave", "convex", "focus", "focal length", "centre of curvature", "center of curvature",
           "principal axis", "pole", "mirror formula", "magnification", "ray diagram", "object distance", "image distance",
         ],
       },
@@ -118,6 +123,11 @@ const UI_NOISE_PATTERNS = [
   /^\d{1,2}:\d{2}(\s?[ap]m)?$/i,
   /^\d{1,2}:\d{2}\s*[ap]m$/i,
   /^\d{1,3}%$/,
+  /^\d+\s*devices?\b/i,
+  /^\d{1,2}:\d{2}\s*\(.+\)$/i,
+  /\b(?:4g|5g|lte|volte|wi-?fi|signal|airplane mode)\b/i,
+  /\bnet::err_name_not_resolved\b/i,
+  /\bdns_probe_finished_nxdomain\b/i,
   /^\d+\/\d+$/,
   /\b(?:png|jpg|jpeg|webp|gif|pdf|docx?|pptx?)\b/i,
   /\bfilename\b/i,
@@ -160,6 +170,7 @@ function cleanLine(line: string) {
 
 function isUiNoise(line: string) {
   if (!line) return true;
+  if (isUiOrAppArtifactLine(line)) return true;
   if (/^[^a-zA-Z0-9]+$/.test(line)) return true;
   return UI_NOISE_PATTERNS.some((pattern) => pattern.test(line));
 }
@@ -276,12 +287,7 @@ function partitionAcademicContent(rawText: string) {
 }
 
 export function sanitizeOcrText(text: string) {
-  const lines = text
-    .split(/\r?\n/)
-    .map(cleanLine)
-    .filter((line) => !isUiNoise(line));
-
-  return lines.join("\n").trim();
+  return sanitizeEducationalText(text);
 }
 
 function normalizeOcrForAnalysis(text: string) {
@@ -525,7 +531,7 @@ function keywordHits(text: string, keywords: string[]) {
 function detectSubject(segment: string) {
   const lower = normalize(segment);
   const scores = Object.entries(SUBJECT_RULES).map(([subject, rule]) => {
-    const explicit = rule.aliases.some((alias) => new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\b`, "i").test(segment));
+    const explicit = rule.aliases.some((alias) => new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(segment));
     const keywordScore = keywordHits(lower, rule.keywords);
     const topicScore = rule.topics.reduce((acc, topic) => acc + keywordHits(lower, topic.aliases), 0);
     const total = (explicit ? 4 : 0) + keywordScore + topicScore;
@@ -619,10 +625,10 @@ function detectTopicAndChapter(segment: string, subject: string) {
         return {
           topic: topicRule.topic,
           chapter: validExplicitChapter ?? topicRule.chapter,
-          concept: mirrorConcept ?? topicRule.concept ?? UNKNOWN,
+          concept: topicRule.concept ?? mirrorConcept ?? UNKNOWN,
           topicConfidence: 0.92,
           chapterConfidence: validExplicitChapter ? 0.86 : 0.84,
-          conceptConfidence: mirrorConcept ? 0.9 : topicRule.concept ? 0.78 : 0.3,
+          conceptConfidence: topicRule.concept ? 0.9 : mirrorConcept ? 0.86 : 0.3,
         };
       }
     }
@@ -824,6 +830,8 @@ function normalizeFormulaText(rawFormula: string) {
     .replace(/\s+/g, " ")
     .trim();
 
+  normalized = normalized.replace(/^(?:formula|given|therefore|answer)\s*[:\-]\s*/i, "");
+
   normalized = normalized
     .replace(/\b([Il])\s*\/(?=[fuvm]\b)/g, "1/")
     .replace(/\b([1])\s*\/\s*([fuvm])\b/gi, "1/$2")
@@ -1017,11 +1025,20 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
   const boardGuess = detectBoard(cleanedForAnalysis);
   const classGuess = detectClassLevel(cleanedForAnalysis);
   const languageGuess = detectLanguage(cleanedForAnalysis);
+  const cleanedSubjectGuess = detectSubject(cleanedForAnalysis);
+  const cleanedTopicAndChapter = detectTopicAndChapter(cleanedForAnalysis, cleanedSubjectGuess.subject);
   const hasTables = detectHasTables(cleanedForAnalysis);
   const hasExercises = detectHasExercises(cleanedForAnalysis);
   const examImportance = detectExamImportance(cleanedForAnalysis);
   const blocks = mergeRelatedBlocks(splitIntoQuestionBlocks(cleanedForAnalysis));
-  const cleanedFormulaDetails = extractFormulaeDetailed(cleanedForAnalysis);
+  const contextTextForFormulaFilter = `${boardGuess.value} ${classGuess.value} ${cleanedForAnalysis}`;
+  const cleanedFormulaDetailsRaw = extractFormulaeDetailed(cleanedForAnalysis);
+  const cleanedRelevantFormulae = filterRelevantFormulaeByContext(
+    cleanedFormulaDetailsRaw.map((item) => item.normalized),
+    contextTextForFormulaFilter,
+  );
+  const cleanedFormulaSet = new Set(cleanedRelevantFormulae.map((item) => item.toLowerCase()));
+  const cleanedFormulaDetails = cleanedFormulaDetailsRaw.filter((item) => cleanedFormulaSet.has(item.normalized.toLowerCase()));
 
   const questionBlocks = blocks.length === 1
     ? blocks.filter((block) => {
@@ -1049,7 +1066,14 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
     const topicAndChapter = detectTopicAndChapter(block, subjectGuess.subject);
     const questionType = detectQuestionType(block);
     const questionTypes = detectQuestionTypes(block);
-    const formulaDetails = extractFormulaeDetailed(block);
+    const formulaDetailsRaw = extractFormulaeDetailed(block);
+    const formulaContextText = `${subjectGuess.subject} ${topicAndChapter.chapter} ${topicAndChapter.topic} ${topicAndChapter.concept ?? ""} ${block}`;
+    const relevantFormulae = filterRelevantFormulaeByContext(
+      formulaDetailsRaw.map((item) => item.normalized),
+      formulaContextText,
+    );
+    const relevantFormulaSet = new Set(relevantFormulae.map((item) => item.toLowerCase()));
+    const formulaDetails = formulaDetailsRaw.filter((item) => relevantFormulaSet.has(item.normalized.toLowerCase()));
     const normalizedFormulae = formulaDetails
       .filter((item) => item.confidence >= 0.6)
       .map((item) => item.normalized);
@@ -1125,12 +1149,12 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
           academicSourceContent: cleanedForAnalysis,
           academicQuestions: extractAcademicQuestionLines(cleanedForAnalysis),
           academicMetadata: {
-            subject: UNKNOWN,
+            subject: enforceConfidence(cleanedSubjectGuess.subject, cleanedSubjectGuess.confidence),
             board: boardGuess.value,
             classLevel: classGuess.value,
-            chapter: UNKNOWN,
-            topic: UNKNOWN,
-            concept: UNKNOWN,
+            chapter: enforceConfidence(cleanedTopicAndChapter.chapter, cleanedTopicAndChapter.chapterConfidence),
+            topic: enforceConfidence(cleanedTopicAndChapter.topic, cleanedTopicAndChapter.topicConfidence),
+            concept: enforceConfidence(cleanedTopicAndChapter.concept, cleanedTopicAndChapter.conceptConfidence),
             questionType: UNKNOWN,
             questionTypes: [UNKNOWN],
             language: enforceConfidence(languageGuess.value, languageGuess.confidence),
@@ -1143,12 +1167,12 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
             keywords: extractKeywords(cleaned),
           },
           ignoredContent: partitioned.ignoredLines,
-          subject: UNKNOWN,
+          subject: enforceConfidence(cleanedSubjectGuess.subject, cleanedSubjectGuess.confidence),
           board: boardGuess.value,
           classLevel: classGuess.value,
-          chapter: UNKNOWN,
-          topic: UNKNOWN,
-          concept: UNKNOWN,
+          chapter: enforceConfidence(cleanedTopicAndChapter.chapter, cleanedTopicAndChapter.chapterConfidence),
+          topic: enforceConfidence(cleanedTopicAndChapter.topic, cleanedTopicAndChapter.topicConfidence),
+          concept: enforceConfidence(cleanedTopicAndChapter.concept, cleanedTopicAndChapter.conceptConfidence),
           questionType: UNKNOWN,
           questionTypes: [UNKNOWN],
           language: enforceConfidence(languageGuess.value, languageGuess.confidence),
@@ -1163,12 +1187,12 @@ export function extractAcademicQuestions(rawText: string): ExtractedContent[] {
           diagrams: extractDiagramPrompts(cleaned),
           keywords: extractKeywords(cleaned),
           confidence: {
-            subject: 0.2,
+            subject: cleanedSubjectGuess.confidence,
             board: boardGuess.confidence,
             classLevel: classGuess.confidence,
-            chapter: 0.2,
-            topic: 0.2,
-            concept: 0.2,
+            chapter: cleanedTopicAndChapter.chapterConfidence,
+            topic: cleanedTopicAndChapter.topicConfidence,
+            concept: cleanedTopicAndChapter.conceptConfidence,
             questionType: 0.35,
             language: languageGuess.confidence,
           },

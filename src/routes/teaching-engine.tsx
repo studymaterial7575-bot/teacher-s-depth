@@ -5,7 +5,14 @@ import { AppShell } from "@/components/AppShell";
 import { MasterImageWorkflow } from "@/components/teaching-engine/MasterImageWorkflow";
 import { PromptPreview } from "@/components/teaching-engine/PromptPreview";
 import { extractAcademicQuestions } from "@/lib/teaching-engine/academicExtractor";
+import {
+  filterRelevantFormulaeByContext,
+  isUnknownLikeValue,
+  pickKnownValue,
+  sanitizeEducationalText,
+} from "@/lib/teaching-engine/contentIntegrity";
 import { getAutoRelevantOutputOptions } from "@/lib/teaching-engine/outputSelection";
+import { buildAiPackageText } from "@/lib/teaching-engine/aiPackage";
 import { buildPromptTexts } from "@/lib/teaching-engine/promptBuilder";
 import {
   clearMasterTeachingImage,
@@ -55,6 +62,7 @@ type SourceExtractionContext = {
     board: string;
     chapter: string;
     topic: string;
+    concept: string;
     questionType: string;
     language: string;
     formulaCount: number;
@@ -71,11 +79,11 @@ export const Route = createFileRoute("/teaching-engine")({
   }),
   head: () => ({
     meta: [
-      { title: "Prompt Builder Engine — Teacher's Depth" },
+      { title: "Teacher's Depth — Teaching Procedure" },
       {
         name: "description",
         content:
-          "Generate structured, high-quality educational prompts for ChatGPT from local teaching inputs.",
+          "Teacher's Depth teaching procedure: source content, prompt generation, master teaching image, analysis, cards, deck, and export.",
       },
     ],
   }),
@@ -735,6 +743,15 @@ function delay(ms: number) {
   });
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function isMeaningfulExtracted(item: ExtractedContent) {
   return (
     !UNKNOWN_VALUES.has(item.subject) ||
@@ -749,6 +766,54 @@ function isMeaningfulExtracted(item: ExtractedContent) {
 
 function getActionableExtractedItems(items: ExtractedContent[]) {
   return items.filter(isMeaningfulExtracted);
+}
+
+function knownValueScore(value: string | undefined) {
+  return !isUnknownLikeValue(value) ? 1 : 0;
+}
+
+function scoreExtractedItem(item: ExtractedContent) {
+  return (
+    knownValueScore(item.subject) * 4 +
+    knownValueScore(item.chapter) * 3 +
+    knownValueScore(item.topic) * 3 +
+    knownValueScore(item.concept) * 2 +
+    knownValueScore(item.questionType) +
+    Math.min(item.formulae.length, 3) +
+    Math.min(item.numericalQuestions.length, 2)
+  );
+}
+
+function mergeKnownExtractedMetadata(items: ExtractedContent[], primary: ExtractedContent) {
+  const knownItems = items.filter((item) => scoreExtractedItem(item) > 0);
+  const subject = pickKnownValue(primary.subject, ...knownItems.map((item) => item.subject)) || primary.subject;
+  const chapter = pickKnownValue(primary.chapter, ...knownItems.map((item) => item.chapter)) || primary.chapter;
+  const topic = pickKnownValue(primary.topic, ...knownItems.map((item) => item.topic)) || primary.topic;
+  const concept = pickKnownValue(primary.concept, ...knownItems.map((item) => item.concept)) || primary.concept;
+  const questionType = pickKnownValue(primary.questionType, ...knownItems.map((item) => item.questionType)) || primary.questionType;
+  const language = pickKnownValue(primary.language, ...knownItems.map((item) => item.language)) || primary.language;
+  const formulaContext = `${subject} ${primary.board} ${primary.classLevel} ${chapter} ${topic} ${primary.ocrText}`;
+  const mergedFormulae = filterRelevantFormulaeByContext(
+    knownItems.flatMap((item) => item.formulae),
+    formulaContext,
+  );
+
+  return {
+    ...primary,
+    subject,
+    chapter,
+    topic,
+    concept,
+    questionType,
+    language,
+    formulae: mergedFormulae.length > 0 ? mergedFormulae : primary.formulae,
+  } satisfies ExtractedContent;
+}
+
+function selectPrimaryExtracted(items: ExtractedContent[]) {
+  if (items.length === 0) return null;
+  const sorted = [...items].sort((a, b) => scoreExtractedItem(b) - scoreExtractedItem(a));
+  return mergeKnownExtractedMetadata(items, sorted[0]);
 }
 
 function getSourceExtractionContext(params: {
@@ -782,6 +847,7 @@ function getSourceExtractionContext(params: {
         board: extracted.board,
         chapter: extracted.chapter,
         topic: extracted.topic,
+        concept: extracted.concept ?? "Not identified",
         questionType: extracted.questionType,
         language: extracted.language,
         formulaCount: extracted.formulae.length,
@@ -803,6 +869,7 @@ function getSourceExtractionContext(params: {
         board: extracted.board,
         chapter: extracted.chapter,
         topic: extracted.topic,
+        concept: extracted.concept ?? "Not identified",
         questionType: extracted.questionType,
         language: extracted.language,
         formulaCount: extracted.formulae.length,
@@ -827,6 +894,7 @@ function getSourceExtractionContext(params: {
         board: extracted.board,
         chapter: extracted.chapter,
         topic: extracted.topic,
+        concept: extracted.concept ?? "Not identified",
         questionType: extracted.questionType,
         language: extracted.language,
         formulaCount: extracted.formulae.length,
@@ -848,6 +916,7 @@ function getSourceExtractionContext(params: {
         board: extracted.board,
         chapter: extracted.chapter,
         topic: extracted.topic,
+        concept: extracted.concept ?? "Not identified",
         questionType: extracted.questionType,
         language: extracted.language,
         formulaCount: extracted.formulae.length,
@@ -868,6 +937,7 @@ function getSourceExtractionContext(params: {
       board: extracted.board,
       chapter: extracted.chapter,
       topic: extracted.topic,
+      concept: extracted.concept ?? "Not identified",
       questionType: extracted.questionType,
       language: extracted.language,
       formulaCount: extracted.formulae.length,
@@ -1238,7 +1308,7 @@ function RouteComponent() {
       }
 
       const mergedText = extractedTextParts.join("\n\n").trim();
-      const freshText = deduplicateOcrTextBlocks(mergedText);
+      const freshText = sanitizeEducationalText(deduplicateOcrTextBlocks(mergedText));
       if (freshText) {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(STORAGE_KEYS.teachingEngineOcrText);
@@ -1253,8 +1323,9 @@ function RouteComponent() {
         const nextItems = extractAcademicQuestions(freshText);
         const actionableItems = getActionableExtractedItems(nextItems);
         if (actionableItems.length > 0) {
+          const primary = selectPrimaryExtracted(actionableItems);
           setExtractedItems(nextItems);
-          setExtracted(actionableItems[0]);
+          setExtracted(primary ?? actionableItems[0]);
           setWorkflowStep("ocr");
         } else {
           setExtractedItems(nextItems);
@@ -1337,7 +1408,7 @@ function RouteComponent() {
   function runExtraction() {
     setWorkflowStep("ocr");
 
-    const freshText = deduplicateOcrTextBlocks(ocrText);
+    const freshText = sanitizeEducationalText(deduplicateOcrTextBlocks(ocrText));
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(STORAGE_KEYS.teachingEngineOcrText);
       window.localStorage.removeItem(STORAGE_KEYS.teachingEngineExtracted);
@@ -1351,8 +1422,9 @@ function RouteComponent() {
     const nextItems = extractAcademicQuestions(freshText);
     const actionableItems = getActionableExtractedItems(nextItems);
     if (actionableItems.length > 0) {
+      const primary = selectPrimaryExtracted(actionableItems);
       setExtractedItems(nextItems);
-      setExtracted(actionableItems[0]);
+      setExtracted(primary ?? actionableItems[0]);
     } else {
       setExtractedItems(nextItems);
       setExtracted(DEFAULT_EXTRACTED);
@@ -1456,22 +1528,88 @@ function RouteComponent() {
     }
   }
 
+  function getAiPackageText() {
+    return buildAiPackageText(prompt, files.map((file) => ({ name: file.name, type: file.type })), ocrText);
+  }
+
+  async function downloadAiPackage() {
+    if (!prompt.trim()) return;
+
+    const attachments = await Promise.all(
+      files.map(async (file) => {
+        const buffer = await file.arrayBuffer();
+        const binary = Array.from(new Uint8Array(buffer))
+          .map((byte) => String.fromCharCode(byte))
+          .join("");
+        const base64 = btoa(binary);
+        const mime = file.type || "application/octet-stream";
+
+        return `
+          <figure style="margin: 0 0 1rem; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 12px; background: #f8fafc;">
+            <figcaption style="font-weight: 700; margin-bottom: 0.75rem;">Original source: ${file.name}</figcaption>
+            <img src="data:${mime};base64,${base64}" alt="${file.name}" style="max-width: 100%; border-radius: 8px; border: 1px solid #cbd5e1;" />
+          </figure>
+        `;
+      }),
+    );
+
+    const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Teacher's Depth AI package</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; line-height: 1.6; }
+      .section { margin-bottom: 1.5rem; }
+      h1, h2 { margin-bottom: 0.5rem; }
+      pre { white-space: pre-wrap; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1rem; }
+      .meta { color: #475569; }
+    </style>
+  </head>
+  <body>
+    <div class="section">
+      <h1>Teacher's Depth AI package</h1>
+      <div class="meta">Original source images are preserved and attached below.</div>
+    </div>
+    <div class="section">
+      <h2>AI instruction</h2>
+      <pre>${escapeHtml(getAiPackageText())}</pre>
+    </div>
+    <div class="section">
+      <h2>Original screenshots / source images</h2>
+      ${attachments.join("\n")}
+    </div>
+  </body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `teachers-depth-ai-package-${Date.now()}.html`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setAnnouncement("Downloaded AI package with prompt and original screenshots.");
+  }
+
   async function sendToChatGpt() {
     if (!prompt.trim()) return;
+    const aiPackageText = getAiPackageText();
     setSendStatus("sending");
-    setAnnouncement("Sending prompt to ChatGPT.");
+    setAnnouncement("Preparing prompt package for ChatGPT.");
     setWorkflowStep("preview");
     await delay(520);
 
     try {
-      const url = `https://chatgpt.com/?prompt=${encodeURIComponent(prompt)}`;
+      const url = `https://chatgpt.com/?prompt=${encodeURIComponent(aiPackageText)}`;
       const opened = window.open(url, "_blank", "noopener,noreferrer");
       if (opened) {
         setSendStatus("opened");
-        setAnnouncement("Opened ChatGPT with generated prompt.");
+        setAnnouncement("Opened ChatGPT with the original screenshot guidance included.");
       } else {
         setSendStatus("sent");
-        setAnnouncement("Prompt sent successfully.");
+        setAnnouncement("Prompt package prepared successfully.");
       }
     } catch {
       setSendStatus("error");
@@ -1489,17 +1627,48 @@ function RouteComponent() {
 
   async function copyPrompt() {
     try {
-      await navigator.clipboard.writeText(prompt);
+      const aiPackageText = getAiPackageText();
+      await navigator.clipboard.writeText(aiPackageText);
       setCopied(true);
-      setAnnouncement("Prompt copied to clipboard.");
+      setAnnouncement("AI package copied to clipboard.");
     } catch {
       setCopied(false);
     }
   }
 
+  const teachingProcedureStages = [
+    "Source Content",
+    "Prompt Generation",
+    "Master Teaching Image",
+    "Analysis",
+    "Disintegration",
+    "Teaching Cards",
+    "Deck",
+    "Export",
+  ];
+
   return (
-    <AppShell back={{ to: "/" }} title="Prompt Builder Engine">
+    <AppShell back={{ to: "/" }} title="Teacher's Depth Teaching Procedure">
       <div className="space-y-3 pb-28 sm:space-y-4 md:pb-8">
+        <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-5">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Teacher's Depth Flow
+            </div>
+            <div className="text-[10px] text-muted-foreground">Prompt Builder is one stage in the full teaching journey</div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px] text-foreground">
+            {teachingProcedureStages.map((stage) => (
+              <span
+                key={stage}
+                className="rounded-full border border-border bg-background/60 px-2.5 py-1.5"
+              >
+                {stage}
+              </span>
+            ))}
+          </div>
+        </section>
+
         <section className="rounded-3xl border border-border bg-card/70 p-3 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-4 md:p-5">
           <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             <Upload size={14} />
@@ -2043,8 +2212,10 @@ function RouteComponent() {
         <PromptPreview
           prompt={prompt}
           copied={copied}
+          sourceFileNames={files.map((file) => file.name)}
           onCopyPrompt={copyPrompt}
           onSendToChatGpt={sendToChatGpt}
+          onDownloadAiPackage={downloadAiPackage}
           sendStatus={sendStatus}
           summary={promptSummary}
         />

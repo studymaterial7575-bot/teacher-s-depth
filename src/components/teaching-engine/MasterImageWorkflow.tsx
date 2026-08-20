@@ -8,6 +8,14 @@ import {
 } from "@/lib/teaching-engine/persistence";
 import { ensureMinimumDisintegrationCards } from "@/lib/teaching-engine/disintegration";
 import { buildFallbackTeachingImageAnalysis } from "@/lib/teaching-engine/masterImageFallback";
+import {
+  filterRelevantFormulaeByContext,
+  getContextAwareFallbackFormula,
+  pickKnownValue,
+  sanitizeEducationalLines,
+  sanitizeEducationalText,
+  sanitizeEducationalTextByContext,
+} from "@/lib/teaching-engine/contentIntegrity";
 import { clearTeachingRunDerivedState, STORAGE_KEYS, useLocalStorage } from "@/lib/storage";
 import type {
   ExtractedContent,
@@ -118,11 +126,47 @@ function dataUrlToFile(dataUrl: string, fileName: string) {
 }
 
 function safeLines(value: string, max = 12) {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, max);
+  return sanitizeEducationalLines(value.split(/\r?\n/), max);
+}
+
+function pickResolvedMetadataValue(primary: string, fallback: string, defaultValue: string) {
+  const resolved = pickKnownValue(primary, fallback);
+  return resolved || defaultValue;
+}
+
+function resolveExtractedForWorkflow(
+  extracted: ExtractedContent,
+  sourceExtraction: MasterImageWorkflowProps["sourceExtraction"],
+): ExtractedContent {
+  const sourceText = sanitizeEducationalText(sourceExtraction.extractedText || extracted.ocrText || "");
+  const subject = pickResolvedMetadataValue(extracted.subject, sourceExtraction.metadata.subject, "Not identified");
+  const chapter = pickResolvedMetadataValue(extracted.chapter, sourceExtraction.metadata.chapter, "Not identified");
+  const topic = pickResolvedMetadataValue(extracted.topic, sourceExtraction.metadata.topic, "Not identified");
+  const inferredConcept = /\bconcave\b/i.test(sourceText) && /\bconvex\b/i.test(sourceText)
+    ? "Concave/Convex Mirror"
+    : /\bconcave\b/i.test(sourceText)
+      ? "Concave Mirror"
+      : /\bconvex\b/i.test(sourceText)
+        ? "Convex Mirror"
+        : "";
+  const concept = pickKnownValue(extracted.concept, inferredConcept) || "Not identified";
+  const rawContext = `${subject} ${sourceExtraction.metadata.board} ${sourceExtraction.metadata.classLevel} ${chapter} ${topic} ${sourceText}`;
+  const formulae = filterRelevantFormulaeByContext(extracted.formulae, rawContext);
+
+  return {
+    ...extracted,
+    ocrText: sourceText || extracted.ocrText,
+    cleanedOcrText: sourceText || extracted.cleanedOcrText,
+    subject,
+    chapter,
+    topic,
+    concept,
+    board: pickResolvedMetadataValue(extracted.board, sourceExtraction.metadata.board, "Not identified"),
+    classLevel: pickResolvedMetadataValue(extracted.classLevel, sourceExtraction.metadata.classLevel, "Not identified"),
+    questionType: pickResolvedMetadataValue(extracted.questionType, sourceExtraction.metadata.questionType, "Not identified"),
+    language: pickResolvedMetadataValue(extracted.language, sourceExtraction.metadata.language, "English"),
+    formulae,
+  };
 }
 
 function hasKnownAcademicContext(extracted: ExtractedContent) {
@@ -144,11 +188,23 @@ function buildGeneralExamCoverage(topic: string, subject: string) {
   ];
 }
 
-function buildMasterImageSpec(extracted: ExtractedContent, teachingResponse: string, prompt: string) {
-  const keyFormulas = extracted.formulae.length > 0 ? extracted.formulae : ["Identify formulae from teaching response"]; 
+export function buildMasterImageSpec(extracted: ExtractedContent, teachingResponse: string, prompt: string, sourceText = "") {
+  const rawContext = `${extracted.subject} ${extracted.board} ${extracted.classLevel} ${extracted.chapter} ${extracted.topic} ${sourceText} ${teachingResponse}`;
+  const cleanTeachingResponse = sanitizeEducationalTextByContext(teachingResponse, rawContext);
+  const cleanSourceText = sanitizeEducationalTextByContext(sourceText, rawContext);
+  const formulaContext = `${extracted.subject} ${extracted.board} ${extracted.classLevel} ${extracted.chapter} ${extracted.topic} ${cleanSourceText} ${cleanTeachingResponse}`;
+  const inlineFormulaCandidates = Array.from(cleanTeachingResponse.matchAll(/[A-Za-z][A-Za-z0-9]*\s*=\s*[^\n,.;]+/g)).map((item) => item[0]);
+  const keyFormulas = filterRelevantFormulaeByContext([...extracted.formulae, ...inlineFormulaCandidates], formulaContext);
+  const fallbackFormula = getContextAwareFallbackFormula(formulaContext);
+  const formulaCandidates = keyFormulas.length > 0
+    ? keyFormulas
+    : fallbackFormula
+      ? [fallbackFormula]
+      : ["Identify formulae from teaching response"];
   const keyDiagrams = extracted.diagrams.length > 0 ? extracted.diagrams : ["Create one clear labeled educational diagram"]; 
-  const responseHighlights = safeLines(teachingResponse, 16);
-  const promptHighlights = safeLines(prompt, 10);
+  const responseHighlights = safeLines(cleanTeachingResponse, 16);
+  const sourceHighlights = safeLines(cleanSourceText, 10);
+  const promptHighlights = safeLines(sanitizeEducationalTextByContext(prompt, formulaContext), 10);
   const topic = extracted.topic !== "Not identified" ? extracted.topic : "Detected Topic";
   const subject = extracted.subject !== "Not identified" ? extracted.subject : "Detected Subject";
   const knownAcademicContext = hasKnownAcademicContext(extracted);
@@ -186,12 +242,15 @@ function buildMasterImageSpec(extracted: ExtractedContent, teachingResponse: str
     "- Avoid unsupported exam probability claims.",
     "",
     "Formula candidates:",
-    ...keyFormulas.map((line) => `- ${line}`),
+    ...formulaCandidates.map((line) => `- ${line}`),
     "",
     "Diagram candidates:",
     ...keyDiagrams.map((line) => `- ${line}`),
     "",
-    "Use this teaching-response content as primary truth:",
+    "Use this source content as primary truth:",
+    ...(sourceHighlights.length > 0 ? sourceHighlights.map((line) => `- ${line}`) : ["- No direct source text provided"]),
+    "",
+    "Use this teaching-response content as secondary support:",
     ...(responseHighlights.length > 0 ? responseHighlights.map((line) => `- ${line}`) : ["- No direct teaching response provided"]),
     "",
     "Use this generated prompt context as secondary support:",
@@ -218,7 +277,8 @@ function firstSentence(text: string, fallback: string) {
 }
 
 function detectPrimaryFormula(text: string) {
-  const match = text.match(/[A-Za-z][A-Za-z0-9]*\s*=\s*[^\n,.;]+/);
+  const cleaned = sanitizeEducationalText(text);
+  const match = cleaned.match(/[A-Za-z][A-Za-z0-9]*\s*=\s*[^\n,.;]+/);
   return match?.[0]?.trim() ?? "Formula not explicitly detected";
 }
 
@@ -229,12 +289,17 @@ function fallbackVariableMeaning(formula: string) {
 }
 
 function buildLocalTeachingSections(extracted: ExtractedContent, teachingResponse: string) {
+  const cleanedTeachingResponse = sanitizeEducationalText(teachingResponse);
   const topic = extracted.topic !== "Not identified" ? extracted.topic : "Detected Topic";
   const chapter = extracted.chapter !== "Not identified" ? extracted.chapter : "Detected Chapter";
   const subject = extracted.subject !== "Not identified" ? extracted.subject : "Detected Subject";
-  const formula = extracted.formulae[0] ?? detectPrimaryFormula(teachingResponse);
+  const formulaContext = `${extracted.subject} ${extracted.board} ${extracted.classLevel} ${extracted.chapter} ${extracted.topic} ${cleanedTeachingResponse}`;
+  const formula = filterRelevantFormulaeByContext(
+    [...extracted.formulae, detectPrimaryFormula(cleanedTeachingResponse)],
+    formulaContext,
+  )[0] ?? (getContextAwareFallbackFormula(formulaContext) || "Formula not explicitly detected");
   const variableMeanings = fallbackVariableMeaning(formula);
-  const keyPoints = safeLines(teachingResponse, 18);
+  const keyPoints = safeLines(cleanedTeachingResponse, 18);
   const knownAcademicContext = hasKnownAcademicContext(extracted);
   const additionalCoverage = knownAcademicContext
     ? [
@@ -247,7 +312,7 @@ function buildLocalTeachingSections(extracted: ExtractedContent, teachingRespons
     {
       heading: `A. SOURCE CONTENT - ${topic} (${chapter})`,
       lines: [
-        firstSentence(teachingResponse, "Concept summary based on the generated teaching response."),
+        firstSentence(cleanedTeachingResponse, "Concept summary based on the generated teaching response."),
         `Subject: ${extracted.subject}`,
       ],
     },
@@ -258,7 +323,7 @@ function buildLocalTeachingSections(extracted: ExtractedContent, teachingRespons
     {
       heading: "C. FORMULAS / CONCEPTS",
       lines: [
-        firstSentence(teachingResponse, "Definition and concept extracted from response."),
+        firstSentence(cleanedTeachingResponse, "Definition and concept extracted from response."),
         "Important condition: apply concept only under valid assumptions given in class.",
         `Formula: ${formula}`,
         ...variableMeanings,
@@ -413,10 +478,15 @@ async function generateLocalTeachingImageDataUrl(extracted: ExtractedContent, te
 }
 
 function fallbackAnalysisFromContext(extracted: ExtractedContent, teachingResponse: string): TeachingImageAnalysisResult {
-  const formula = extracted.formulae[0] ?? detectPrimaryFormula(teachingResponse);
+  const cleanedTeachingResponse = sanitizeEducationalText(teachingResponse);
+  const formulaContext = `${extracted.subject} ${extracted.board} ${extracted.classLevel} ${extracted.chapter} ${extracted.topic} ${cleanedTeachingResponse}`;
+  const formula = filterRelevantFormulaeByContext(
+    [...extracted.formulae, detectPrimaryFormula(cleanedTeachingResponse)],
+    formulaContext,
+  )[0] ?? (getContextAwareFallbackFormula(formulaContext) || "Formula not explicitly detected");
   const topic = extracted.topic !== "Not identified" ? extracted.topic : "Detected Topic";
   const chapter = extracted.chapter !== "Not identified" ? extracted.chapter : "Detected Chapter";
-  const points = safeLines(teachingResponse, 14);
+  const points = safeLines(cleanedTeachingResponse, 14);
   const knownAcademicContext = hasKnownAcademicContext(extracted);
   const sourceContent = points.length > 0
     ? points.slice(0, 6)
@@ -431,7 +501,7 @@ function fallbackAnalysisFromContext(extracted: ExtractedContent, teachingRespon
   const definitions = [
     {
       title: `${topic} Definition`,
-      text: firstSentence(teachingResponse, `Core definition for ${topic}.`),
+      text: firstSentence(cleanedTeachingResponse, `Core definition for ${topic}.`),
     },
   ];
 
@@ -902,6 +972,10 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [workflowNotice, setWorkflowNotice] = useState<string | null>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const resolvedExtracted = useMemo(
+    () => resolveExtractedForWorkflow(extracted, sourceExtraction),
+    [extracted, sourceExtraction],
+  );
 
   const resetCurrentRunState = () => {
     clearTeachingRunDerivedState();
@@ -984,7 +1058,13 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   }, [cards.length]);
 
   function onCreateImageSpec() {
-    const nextSpec = buildMasterImageSpec(extracted, teachingResponse, prompt);
+    const rawContext = `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic} ${sourceExtraction.extractedText} ${teachingResponse}`;
+    const nextSpec = buildMasterImageSpec(
+      resolvedExtracted,
+      sanitizeEducationalTextByContext(teachingResponse, rawContext),
+      sanitizeEducationalTextByContext(prompt, rawContext),
+      sourceExtraction.extractedText,
+    );
     setImageSpec(nextSpec);
     setWorkflowError(null);
     setWorkflowNotice("Image-generation instruction updated from current teaching response.");
@@ -1030,7 +1110,10 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       onCreateImageSpec();
     }
 
-    const finalSpec = imageSpec.trim() || buildMasterImageSpec(extracted, teachingResponse, prompt);
+    const rawContext = `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic} ${sourceExtraction.extractedText} ${teachingResponse}`;
+    const cleanedTeachingResponse = sanitizeEducationalTextByContext(teachingResponse, rawContext);
+    const cleanedPrompt = sanitizeEducationalTextByContext(prompt, rawContext);
+    const finalSpec = imageSpec.trim() || buildMasterImageSpec(resolvedExtracted, cleanedTeachingResponse, cleanedPrompt, sourceExtraction.extractedText);
 
     setIsGeneratingImage(true);
     setWorkflowError(null);
@@ -1055,7 +1138,7 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         dataUrl = payload.dataUrl;
         notice = "Master teaching image generated using local prompt-builder rendering.";
       } catch {
-        dataUrl = await generateLocalTeachingImageDataUrl(extracted, teachingResponse || prompt);
+        dataUrl = await generateLocalTeachingImageDataUrl(resolvedExtracted, cleanedTeachingResponse || cleanedPrompt);
         notice = "Generated a local comprehensive master teaching image from current teaching response.";
       }
 
@@ -1131,12 +1214,23 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          subject: extracted.subject,
-          chapter: extracted.chapter,
-          topic: extracted.topic,
-          teachingResponse,
-          sourceExtractedText: sourceExtraction.extractedText,
-          sourceExtractionMetadata: sourceExtraction.metadata,
+          subject: resolvedExtracted.subject,
+          chapter: resolvedExtracted.chapter,
+          topic: resolvedExtracted.topic,
+          teachingResponse: sanitizeEducationalTextByContext(teachingResponse, `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic} ${sourceExtraction.extractedText}`),
+          sourceExtractedText: sanitizeEducationalTextByContext(sourceExtraction.extractedText, `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic}`),
+          sourceFormulae: filterRelevantFormulaeByContext(
+            resolvedExtracted.formulae,
+            `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic} ${sourceExtraction.extractedText}`,
+          ),
+          sourceNumericalQuestions: sanitizeEducationalLines(resolvedExtracted.numericalQuestions, 8),
+          sourceExtractionMetadata: {
+            ...sourceExtraction.metadata,
+            subject: resolvedExtracted.subject,
+            chapter: resolvedExtracted.chapter,
+            topic: resolvedExtracted.topic,
+            concept: resolvedExtracted.concept,
+          },
           file: {
             name: file.name,
             mime: file.type || "image/png",
@@ -1174,7 +1268,13 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       }
       return nextAnalysis;
     } catch (error) {
-      const localAnalysis = buildFallbackTeachingImageAnalysis(extracted, teachingResponse || imageSpec || prompt);
+      const localAnalysis = buildFallbackTeachingImageAnalysis(
+        resolvedExtracted,
+        sanitizeEducationalTextByContext(
+          teachingResponse || imageSpec || prompt,
+          `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic} ${sourceExtraction.extractedText}`,
+        ),
+      );
       setAnalysis(localAnalysis);
       if (!options?.suppressNotice) {
         setWorkflowNotice("Applied local structural disintegration from current project context.");

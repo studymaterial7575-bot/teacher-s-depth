@@ -1,5 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { buildFallbackTeachingImageAnalysis } from "@/lib/teaching-engine/masterImageFallback";
+import {
+  filterRelevantFormulaeByContext,
+  pickKnownValue,
+  sanitizeEducationalLines,
+  sanitizeEducationalText,
+  sanitizeEducationalTextByContext,
+} from "@/lib/teaching-engine/contentIntegrity";
 
 export const Route = createFileRoute("/api/teaching-image-analyze")({
   server: {
@@ -11,9 +18,15 @@ export const Route = createFileRoute("/api/teaching-image-analyze")({
           topic?: string;
           teachingResponse?: string;
           sourceExtractedText?: string;
+          sourceFormulae?: string[];
+          sourceNumericalQuestions?: string[];
           sourceExtractionMetadata?: {
+            subject?: string;
             board?: string;
             classLevel?: string;
+            chapter?: string;
+            topic?: string;
+            concept?: string;
             language?: string;
             questionType?: string;
           };
@@ -24,26 +37,37 @@ export const Route = createFileRoute("/api/teaching-image-analyze")({
           return new Response("Missing image payload", { status: 400 });
         }
 
+        const subject = pickKnownValue(body.subject, body.sourceExtractionMetadata?.subject) || "Detected Subject";
+        const chapter = pickKnownValue(body.chapter, body.sourceExtractionMetadata?.chapter) || "Detected Chapter";
+        const topic = pickKnownValue(body.topic, body.sourceExtractionMetadata?.topic) || "Detected Topic";
+        const baseContext = `${subject} ${body.sourceExtractionMetadata?.board || ""} ${body.sourceExtractionMetadata?.classLevel || ""} ${chapter} ${topic}`;
+        const cleanedSourceText = sanitizeEducationalTextByContext(body.sourceExtractedText || body.teachingResponse || "", baseContext);
+        const cleanedTeachingResponse = sanitizeEducationalTextByContext(body.teachingResponse || "", `${baseContext} ${cleanedSourceText}`);
+        const formulaContext = `${baseContext} ${cleanedSourceText} ${cleanedTeachingResponse}`;
+        const sourceFormulae = filterRelevantFormulaeByContext(body.sourceFormulae ?? [], formulaContext);
+        const sourceNumericalQuestions = sanitizeEducationalLines(body.sourceNumericalQuestions ?? [], 8);
+
         const extracted = {
-          ocrText: body.sourceExtractedText || body.teachingResponse || "",
-          subject: body.subject || "Detected Subject",
+          ocrText: cleanedSourceText || cleanedTeachingResponse,
+          subject,
           board: body.sourceExtractionMetadata?.board || "Unknown",
           classLevel: body.sourceExtractionMetadata?.classLevel || "Unknown",
-          chapter: body.chapter || "Detected Chapter",
-          topic: body.topic || "Detected Topic",
+          chapter,
+          topic,
+          concept: pickKnownValue(body.sourceExtractionMetadata?.concept) || "Not identified",
           questionType: body.sourceExtractionMetadata?.questionType || "Unknown",
           questionTypes: [],
           language: body.sourceExtractionMetadata?.language || "English",
           hasTables: false,
           hasExercises: false,
           examImportance: "Medium",
-          formulae: [],
-          numericalQuestions: [],
+          formulae: sourceFormulae,
+          numericalQuestions: sourceNumericalQuestions,
           diagrams: [],
           keywords: [],
         };
 
-        const fallbackInput = [body.sourceExtractedText || "", body.teachingResponse || ""].filter(Boolean).join("\n\n");
+        const fallbackInput = [cleanedSourceText, cleanedTeachingResponse].filter(Boolean).join("\n\n");
         return Response.json(buildFallbackTeachingImageAnalysis(extracted, fallbackInput));
       },
     },

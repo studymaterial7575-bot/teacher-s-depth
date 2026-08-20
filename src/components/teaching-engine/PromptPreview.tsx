@@ -5,8 +5,10 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 type PromptPreviewProps = {
   prompt: string;
   copied: boolean;
+  sourceFileNames: string[];
   onCopyPrompt: () => void;
   onSendToChatGpt: () => void;
+  onDownloadAiPackage: () => void;
   sendStatus: "idle" | "sending" | "sent" | "opened" | "error";
   summary: {
     imagesProcessed: number;
@@ -23,8 +25,10 @@ type PromptPreviewProps = {
 export function PromptPreview({
   prompt,
   copied,
+  sourceFileNames,
   onCopyPrompt,
   onSendToChatGpt,
+  onDownloadAiPackage,
   sendStatus,
   summary,
 }: PromptPreviewProps) {
@@ -155,7 +159,7 @@ export function PromptPreview({
           className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-semibold text-secondary-foreground"
         >
           <Clipboard size={16} />
-          {copied ? "Prompt copied to clipboard" : "Copy Prompt"}
+          {copied ? "AI package copied" : "Copy AI Package"}
         </button>
         <button
           type="button"
@@ -173,9 +177,28 @@ export function PromptPreview({
           className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-card/60 px-4 py-3 text-sm font-semibold text-foreground"
         >
           <Send size={16} />
-          {sendStatus === "sending" ? "Sending prompt..." : "Send to ChatGPT"}
+          {sendStatus === "sending" ? "Preparing prompt..." : "Send to ChatGPT"}
         </button>
       </div>
+
+      {sourceFileNames.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-border bg-background/50 p-3 text-xs text-muted-foreground">
+          <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Original source files kept with the prompt</div>
+          <div className="space-y-1 break-all">
+            {sourceFileNames.map((fileName) => (
+              <div key={fileName}>{fileName}</div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={onDownloadAiPackage}
+            disabled={!hasPrompt}
+            className="mt-3 rounded-xl border border-border bg-card/60 px-3 py-2 text-xs font-semibold text-foreground"
+          >
+            Download AI package
+          </button>
+        </div>
+      )}
 
       <div aria-live="polite" className="sr-only">
         {sendStatus === "sending" && "Sending prompt"}

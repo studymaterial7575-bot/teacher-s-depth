@@ -47,39 +47,67 @@ function Index() {
     <AppShell>
       <section className="mb-6">
         <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
-          Welcome back
+          Teacher's Depth
         </p>
         <h1 className="mt-1 text-3xl font-black tracking-tight text-foreground sm:text-4xl">
-          Learn with <span className="text-primary">depth</span>,
-          <br /> clarity and visual understanding.
+          Teaching workflow for <span className="text-primary">clearer</span>,
+          <br /> classroom-ready delivery.
         </h1>
         <p className="mt-2 max-w-lg text-sm text-muted-foreground">
-          Built for CBSE, ICSE and IGCSE — every chapter explained the way a great teacher would.
+          Start with source content, generate a structured prompt, build a master teaching image, and turn it into a complete teaching deck for classroom use.
         </p>
       </section>
 
+      <section className="mb-8 rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Teacher Workflow
+          </div>
+          <div className="text-[10px] text-muted-foreground">Source → Prompt → Image → Deck → Export</div>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[11px] text-foreground">
+          {[
+            "Source Content",
+            "Prompt Generation",
+            "Master Image",
+            "Analysis",
+            "Disintegration",
+            "Teaching Cards",
+            "Deck",
+            "Export",
+          ].map((stage) => (
+            <span
+              key={stage}
+              className="rounded-full border border-border bg-background/60 px-2.5 py-1.5"
+            >
+              {stage}
+            </span>
+          ))}
+        </div>
+      </section>
+
       <section className="mb-8">
-        <SectionTitle title="Start Here" subtitle="Begin with your material" />
+        <SectionTitle title="Start Teacher Workflow" subtitle="Begin with your material" />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <StartTile
             href="/teaching-engine?entry=screenshot"
             icon={FileImage}
-            label="Upload Screenshot"
-            subtitle="Use a screenshot from your phone gallery"
+            label="Source Content"
+            subtitle="Upload a screenshot or image to begin the teaching workflow"
             tone="from-cyan-500/30 to-sky-500/10"
           />
           <StartTile
             href="/teaching-engine?entry=pdf"
             icon={FileText}
-            label="Upload PDF"
-            subtitle="Open a worksheet, textbook page or question paper"
+            label="Prompt Generation"
+            subtitle="Use OCR, extraction, and tailored teaching prompts for the lesson"
             tone="from-amber-500/30 to-orange-500/10"
           />
           <StartTile
             href="/teaching-engine?entry=camera"
             icon={Camera}
-            label="Camera"
-            subtitle="Capture a fresh photo before OCR and prompt building"
+            label="Master Teaching Image"
+            subtitle="Build the image, analyze it, and turn it into teaching cards"
             tone="from-emerald-500/30 to-teal-500/10"
           />
         </div>

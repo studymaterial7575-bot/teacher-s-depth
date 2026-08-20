@@ -1,4 +1,9 @@
 import { OUTPUT_OPTIONS, STUDENT_PROFILE_OPTIONS, type PromptBuilderInput } from "@/types/teaching-engine";
+import {
+  filterRelevantFormulaeByContext,
+  sanitizeEducationalLines,
+  sanitizeEducationalText,
+} from "@/lib/teaching-engine/contentIntegrity";
 
 export type InterestSignal = {
   kind: "ghost_story" | "unknown";
@@ -270,11 +275,23 @@ function buildSinglePrompt(input: PromptBuilderInput) {
   const outputOptions = safeSelectedOutputOptions.length > 0 ? safeSelectedOutputOptions : ["Normal Solution"];
   const numberedOutputOptions = getNumberedOutputOptions(OUTPUT_OPTIONS).filter(({ name }) => outputOptions.includes(name as any));
   const objectiveLine = objective.trim() || "Generate a clear classroom-ready explanation for this learner.";
-  const ocrPreview = (extracted.academicSourceContent ?? extracted.ocrText).trim() || "No OCR text provided. Use extracted metadata and inferred chapter context.";
+  const ocrPreview = sanitizeEducationalText(extracted.academicSourceContent ?? extracted.ocrText) || "No OCR text provided. Use extracted metadata and inferred chapter context.";
   const examEvidence = formatExamImportanceEvidence(extracted.examImportance);
+  const formulaContextText = `${extracted.subject} ${extracted.chapter} ${extracted.topic} ${extracted.concept ?? ""} ${ocrPreview}`;
+  const relevantFormulae = filterRelevantFormulaeByContext(
+    extracted.formulaDetails && extracted.formulaDetails.length > 0
+      ? extracted.formulaDetails.map((item) => item.normalized)
+      : extracted.formulae,
+    formulaContextText,
+  );
   const formulaList = extracted.formulaDetails && extracted.formulaDetails.length > 0
-    ? extracted.formulaDetails.map((item) => `${item.normalized} (confidence ${Math.round(item.confidence * 100)}%, raw: ${item.raw})`)
-    : extracted.formulae;
+    ? extracted.formulaDetails
+      .filter((item) => relevantFormulae.some((formula) => formula.toLowerCase() === item.normalized.toLowerCase()))
+      .map((item) => `${item.normalized} (confidence ${Math.round(item.confidence * 100)}%, raw: ${item.raw})`)
+    : relevantFormulae;
+  const numericalList = sanitizeEducationalLines(extracted.numericalQuestions, 8);
+  const diagramList = sanitizeEducationalLines(extracted.diagrams, 8);
+  const keywordList = sanitizeEducationalLines(extracted.keywords, 15);
 
   return `You are generating a teaching response from classroom content. This is not a chatbot conversation.
 Create a high-quality educational output exactly using the constraints below.
@@ -298,9 +315,9 @@ EXTRACTED CONTENT:
 - Contains exercises: ${extracted.hasExercises ? "Yes" : "No"}
 - Exam importance: ${examEvidence}
 - Formulae: ${formulaList.length > 0 ? formulaList.join(" | ") : "Not identified"}
-- Numerical questions: ${extracted.numericalQuestions.length > 0 ? extracted.numericalQuestions.join(" | ") : "Not identified"}
-- Diagrams: ${extracted.diagrams.length > 0 ? extracted.diagrams.join(" | ") : "Not identified"}
-- Keywords: ${extracted.keywords.length > 0 ? extracted.keywords.join(", ") : "Not identified"}
+- Numerical questions: ${numericalList.length > 0 ? numericalList.join(" | ") : "Not identified"}
+- Diagrams: ${diagramList.length > 0 ? diagramList.join(" | ") : "Not identified"}
+- Keywords: ${keywordList.length > 0 ? keywordList.join(", ") : "Not identified"}
 - OCR text:
 ${ocrPreview}
 

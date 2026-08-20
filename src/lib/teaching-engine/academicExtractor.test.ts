@@ -254,7 +254,7 @@ describe("academic extraction pipeline", () => {
     const items = extractAcademicQuestions(text);
     expect(items).toHaveLength(1);
     expect(items[0].subject).toBe("Physics");
-    expect(items[0].topic).toBe("Spherical Mirrors");
+    expect(items[0].topic).toBe("Light / Spherical Mirrors");
     expect(items[0].ocrText).toContain("Example: If the focal length is 15 cm, find its radius of curvature.");
     expect(items[0].ocrText).not.toContain("1. Concave mirror");
     expect(items[0].ocrText).not.toContain("2. Convex mirror");
@@ -319,7 +319,39 @@ describe("academic extraction pipeline", () => {
     expect(items[0].ocrText).toContain("Important terms:");
     expect(items[0].ocrText).toContain("R = 2f");
     expect(items[0].ocrText).toContain("If the focal length of a concave mirror is 15 cm, find its radius of curvature.");
+    expect(items[0].formulae).toContain("R = 2f");
+    expect(items[0].formulae.join(" | ")).not.toMatch(/V\s*=\s*I\s*R/i);
     expect(items.some((item) => item.ocrText.includes("1. concave mirror") && item.ocrText.includes("2. convex mirror") && item.ocrText.includes("Important terms:") && item.ocrText.includes("R = 2f"))).toBe(true);
+  });
+
+  it("rejects status-bar and browser-share contamination in spherical mirror OCR", () => {
+    const text = [
+      "20:14 (2 2 devices 1 \"SI @72%\"",
+      "Share a link to chat?",
+      "This creates a copy that others can chat with",
+      "CBSE Class 10 Physics",
+      "Chapter: Light - Reflection and Refraction",
+      "Topic: Spherical Mirrors",
+      "Given: f = 15 cm",
+      "Formula: R = 2f",
+      "Therefore: R = 30 cm",
+      "V = IR",
+    ].join("\n");
+
+    const items = extractAcademicQuestions(text);
+    expect(items).toHaveLength(1);
+
+    const joined = `${items[0].ocrText}\n${items[0].academicSourceContent}`;
+    expect(joined).not.toMatch(/20:14|2\s*devices|share a link to chat|copy that others can chat/i);
+    expect(items[0].ignoredContent?.join("\n") ?? "").toMatch(/20:14|share a link to chat|copy that others can chat/i);
+    expect(items[0].subject).toBe("Physics");
+    expect(items[0].board).toBe("CBSE");
+    expect(items[0].classLevel).toBe("Class 10");
+    expect(items[0].chapter).toBe("Light - Reflection and Refraction");
+    expect(items[0].topic).toBe("Light / Spherical Mirrors");
+    expect(items[0].concept).toBe("Concave/Convex Mirror");
+    expect(items[0].formulae).toContain("R = 2f");
+    expect(items[0].formulae.join(" | ")).not.toMatch(/V\s*=\s*I\s*R/i);
   });
 
   it("returns Unknown on low-confidence OCR", () => {
