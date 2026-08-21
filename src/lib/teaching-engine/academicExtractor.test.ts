@@ -737,7 +737,7 @@ describe("academic extraction pipeline", () => {
     expect(items.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("includes formula accuracy instruction in the built prompt", () => {
+  it("includes generic subject-specific determination instruction in the built prompt", () => {
     const text = "A car travels 120 km in 3 hours. Calculate its average speed.";
     const items = extractAcademicQuestions(text);
     const prompt = buildPromptTexts({
@@ -752,12 +752,11 @@ describe("academic extraction pipeline", () => {
       objective: "Explain average speed.",
     })[0];
 
-    expect(prompt).toContain("FORMULA ACCURACY");
-    expect(prompt).toContain("÷");
-    expect(prompt).toContain("NEVER");
+    expect(prompt).toContain("If visuals, formulas, diagrams, worked examples, question formats, or other subject-specific teaching elements are required");
+    expect(prompt).toContain("original source image as visual ground truth");
   });
 
-  it("includes worked example completeness instruction in the built prompt", () => {
+  it("keeps final subject-specific correction responsibility with the receiving AI", () => {
     const text = "Calculate the average speed of a car that travels 120 km in 3 hours.";
     const items = extractAcademicQuestions(text);
     const prompt = buildPromptTexts({
@@ -772,8 +771,8 @@ describe("academic extraction pipeline", () => {
       objective: "",
     })[0];
 
-    expect(prompt).toContain("WORKED EXAMPLES");
-    expect(prompt).toContain("actual values substituted");
+    expect(prompt).toContain("final subject-specific correction and completion");
+    expect(prompt).toContain("original source image as visual ground truth");
   });
 
   it("source and additional coverage are kept separate in prompt", () => {
