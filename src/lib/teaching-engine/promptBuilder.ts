@@ -349,10 +349,7 @@ OUTPUT FORMATTING INSTRUCTIONS:
 - Use plain text only.
 - Use bullet points for recall-heavy parts.
 - Keep language aligned with the selected learner profile and detected document language.
-- FORMULA ACCURACY: verify every mathematical operator before writing. For speed/rate/ratio formulas always use ÷ or /. "Average speed = Distance ÷ Time" — NEVER "Distance + Time" or "Distance - Time". For electrical formulas: V = IR. Each formula must be mathematically valid.
-- WORKED EXAMPLES: show the complete step-by-step numerical solution with actual values substituted at every step. Do not write "substitute the values" or "solve carefully" without immediately following it with the actual arithmetic (e.g. "= 120 ÷ 3 = 40 km/h"). Include all unit conversions required (km/h → m/s: multiply by 5/18).
-- If visuals are required, describe a subject-specific board-drawing layout (not a generic placeholder). For Motion show a labelled distance-time or speed-time relationship.
-- For social science include timeline/map when selected. For languages include grammar/word-meaning when selected.
+- If visuals, formulas, diagrams, worked examples, question formats, or other subject-specific teaching elements are required, determine them from the actual source image, detected subject/chapter/topic, extracted content, and selected teaching options. The receiving AI must use the original source image as visual ground truth and perform the final subject-specific correction and completion.
 - End with a short "Teacher delivery note" in 2-3 lines.
 - If past-paper data is unavailable, explicitly state: Past-paper frequency unavailable.
 - ADDITIONAL EXAM COVERAGE must be clearly labelled as additional and must NOT be presented as coming from the uploaded source.
