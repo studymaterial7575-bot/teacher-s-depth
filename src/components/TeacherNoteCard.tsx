@@ -1,7 +1,9 @@
 import { AlertTriangle, Brain, Lightbulb, ShieldAlert, Sparkles } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { TeacherNote } from "@/lib/data";
+import { formatMathDisplayText } from "@/lib/teaching-engine/mathDisplay";
 
-const META: Record<TeacherNote["kind"], { label: string; icon: any; tone: string }> = {
+const META: Record<TeacherNote["kind"], { label: string; icon: LucideIcon; tone: string }> = {
   tip: { label: "Teacher Tip", icon: Lightbulb, tone: "text-amber-300" },
   memory: { label: "Memory Trick", icon: Brain, tone: "text-fuchsia-300" },
   error: { label: "Common Error", icon: AlertTriangle, tone: "text-rose-300" },
@@ -18,8 +20,12 @@ export function TeacherNoteCard({ note }: { note: TeacherNote }) {
         <Icon size={18} />
       </div>
       <div className="min-w-0">
-        <div className={`text-[11px] font-bold uppercase tracking-[0.18em] ${m.tone}`}>{m.label}</div>
-        <p className="mt-1 text-sm leading-relaxed text-foreground">{note.text}</p>
+        <div className={`text-[11px] font-bold uppercase tracking-[0.18em] ${m.tone}`}>
+          {m.label}
+        </div>
+        <p className="mt-1 text-sm leading-relaxed text-foreground">
+          {formatMathDisplayText(note.text)}
+        </p>
       </div>
     </div>
   );

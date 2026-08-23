@@ -59,7 +59,13 @@ const ELECTRICITY_FORMULA_PATTERN = /\b(v\s*=\s*i\s*r|i\s*=\s*v\s*\/\s*r|r\s*=\s
 const UNKNOWN_VALUE_PATTERN = /^(unknown|not identified|not yet identified|detected subject|detected chapter|detected topic|general)$/i;
 
 function normalizeLine(line: string) {
-  return line.replace(/[\u2022\u2023\u25E6\u2043\u2219]/g, " ").replace(/\s+/g, " ").trim();
+  // OCR often emits '¢' as a separator between words (e.g., "GRAMMAR ¢ SCHOOL").
+  // Normalize only letter-to-letter cases to avoid broad symbol replacement.
+  return line
+    .replace(/([A-Za-z])\s*¢\s*([A-Za-z])/g, "$1 & $2")
+    .replace(/[\u2022\u2023\u25E6\u2043\u2219]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function containsElectricityFormula(text: string) {

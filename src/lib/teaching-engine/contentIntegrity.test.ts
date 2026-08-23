@@ -4,6 +4,7 @@ import {
   filterRelevantFormulaeByContext,
   sanitizeEducationalTextByContext,
   sanitizeTeacherRequirement,
+  sanitizeEducationalText,
 } from "@/lib/teaching-engine/contentIntegrity";
 
 describe("content integrity context filtering", () => {
@@ -125,5 +126,11 @@ describe("teacher requirement sanitization", () => {
 
   it("returns empty string for empty input", () => {
     expect(sanitizeTeacherRequirement("   ")).toBe("");
+  });
+
+  it("normalizes OCR separator corruption where cent sign appears between words", () => {
+    const cleaned = sanitizeEducationalText("ENGLISH GRAMMAR ¢ SCHOOL LEVEL");
+    expect(cleaned).toContain("ENGLISH GRAMMAR & SCHOOL LEVEL");
+    expect(cleaned).not.toContain("¢");
   });
 });

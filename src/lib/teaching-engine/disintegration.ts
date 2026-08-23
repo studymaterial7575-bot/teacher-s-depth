@@ -4,6 +4,7 @@ import {
   sanitizeEducationalLines,
   sanitizeEducationalText,
 } from "@/lib/teaching-engine/contentIntegrity";
+import { formatMathDisplayText, hasMathNotation } from "@/lib/teaching-engine/mathDisplay";
 
 const REQUIRED_CARD_PATTERNS = [
   /definition|concept|idea|overview/i,
@@ -86,13 +87,29 @@ function sanitizeTeachingLine(value: string, fallback = "") {
   return normalized;
 }
 
+function displayTeachingLine(value: string, fallback = "") {
+  const normalized = sanitizeTeachingLine(value, fallback);
+  if (!normalized) return fallback;
+  return hasMathNotation(normalized) ? formatMathDisplayText(normalized) : normalized;
+}
+
 function hasEducationalSignal(value: string) {
   const text = sanitizeTeachingLine(value, "");
   if (!text) return false;
 
   if (/[=+\-/*^]/.test(text) && /\d|[a-z]/i.test(text)) return true;
-  if (/\b(concept|definition|formula|equation|law|principle|example|solve|calculate|derive|diagram|label|graph|table|mistake|revision|exam|reason|because|therefore|given|answer)\b/i.test(text)) return true;
-  if (/\b(cbse|icse|igcse|physics|chemistry|biology|mathematics|history|geography|english)\b/i.test(text)) return true;
+  if (
+    /\b(concept|definition|formula|equation|law|principle|example|solve|calculate|derive|diagram|label|graph|table|mistake|revision|exam|reason|because|therefore|given|answer)\b/i.test(
+      text,
+    )
+  )
+    return true;
+  if (
+    /\b(cbse|icse|igcse|physics|chemistry|biology|mathematics|history|geography|english)\b/i.test(
+      text,
+    )
+  )
+    return true;
   return text.split(/\s+/).length >= 4;
 }
 
@@ -124,32 +141,37 @@ function extractWorkedExampleStepLines(value: string, relevantFormulae: string[]
 }
 
 function getWorkedExampleFinalAnswerLine(lines: string[]) {
-  return lines.find((line) => /^(final\s*answer|answer)\s*[:\-]/i.test(line)) || "";
+  return lines.find((line) => /^(final\s*answer|answer)\s*[:-]/i.test(line)) || "";
 }
 
 function buildFormulaSummary(formula: string, meaning?: string) {
   const normalizedFormula = formula.trim();
-  const safeMeaning = sanitizeTeachingLine(
-    meaning || "",
-    "",
-  );
+  const safeMeaning = sanitizeTeachingLine(meaning || "", "");
 
   if (!normalizedFormula) {
     return safeMeaning;
   }
 
-  if (/\bV\b.*\bI\b.*\bR\b/i.test(normalizedFormula) || /\bI\b.*\bR\b.*\bV\b/i.test(normalizedFormula)) {
+  if (
+    /\bV\b.*\bI\b.*\bR\b/i.test(normalizedFormula) ||
+    /\bI\b.*\bR\b.*\bV\b/i.test(normalizedFormula)
+  ) {
     return "V = potential difference; I = current; R = resistance. The relationship shows that voltage increases with current when resistance stays constant.";
   }
 
-  return `${normalizedFormula} — ${safeMeaning}`;
+  return `${displayTeachingLine(normalizedFormula, normalizedFormula)} — ${safeMeaning}`;
 }
 
 function normalizeCardTitle(value: string) {
   return value.trim() || "Teaching Card";
 }
 
-function makeCard(title: string, explanation: string, keyPoints: string[], extra: Partial<TeachingCard> = {}): TeachingCard {
+function makeCard(
+  title: string,
+  explanation: string,
+  keyPoints: string[],
+  extra: Partial<TeachingCard> = {},
+): TeachingCard {
   const cleanExplanation = sanitizeTeachingLine(explanation, "");
   const cleanPoints = keyPoints
     .map((point) => sanitizeTeachingLine(point, ""))
@@ -176,7 +198,8 @@ function makeCard(title: string, explanation: string, keyPoints: string[], extra
 function isUsableCard(card: TeachingCard) {
   if (!card.explanation || !hasEducationalSignal(card.explanation)) return false;
   if (PROMPT_OR_METADATA_PATTERNS.some((pattern) => pattern.test(card.explanation))) return false;
-  if (INTERNAL_GENERATION_DIRECTIVES.some((pattern) => pattern.test(card.explanation))) return false;
+  if (INTERNAL_GENERATION_DIRECTIVES.some((pattern) => pattern.test(card.explanation)))
+    return false;
   return true;
 }
 
@@ -185,28 +208,70 @@ function pushCard(cards: TeachingCard[], card: TeachingCard) {
   cards.push(card);
 }
 
-export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysisResult): TeachingCard[] {
+function sanitizeExistingCard(card: TeachingCard): TeachingCard {
+  const explanation = sanitizeTeachingLine(card.explanation, "");
+  return {
+    title: normalizeCardTitle(sanitizeTeachingLine(card.title, card.title || "Teaching Card")),
+    explanation: hasMathNotation(explanation) ? formatMathDisplayText(explanation) : explanation,
+    keyPoints: card.keyPoints
+      .map((point) => sanitizeTeachingLine(point, ""))
+      .map((point) => (hasMathNotation(point) ? formatMathDisplayText(point) : point))
+      .filter((point) => point.length > 0 && hasEducationalSignal(point))
+      .slice(0, 8),
+    formula: displayTeachingLine(card.formula || "", ""),
+    diagram: displayTeachingLine(card.diagram || "", ""),
+    example: displayTeachingLine(card.example || "", ""),
+    examImportance: displayTeachingLine(card.examImportance || "", ""),
+    commonMistake: displayTeachingLine(card.commonMistake || "", ""),
+  };
+}
+
+export function ensureMinimumDisintegrationCards(
+  analysis: TeachingImageAnalysisResult,
+): TeachingCard[] {
+  const normalizedProvidedCards = analysis.cards
+    .map(sanitizeExistingCard)
+    .filter(isUsableCard)
+    .filter((card, index, arr) => {
+      const key = `${card.title}|${card.explanation}`;
+      return (
+        arr.findIndex((candidate) => `${candidate.title}|${candidate.explanation}` === key) ===
+        index
+      );
+    });
+
+  if (normalizedProvidedCards.length >= 4) {
+    return normalizedProvidedCards.slice(0, 12);
+  }
+
   const cards: TeachingCard[] = [];
   const mainTopic = firstNonEmpty(analysis.mainTopic, "Topic");
   const formulaContext = `${analysis.mainTopic} ${analysis.subtopics.join(" ")} ${analysis.sourceContent.join(" ")}`;
   const sourceContent = sanitizeList(analysis.sourceContent, 8);
-  const definitions = sanitizeList(analysis.definitions.map((item) => firstNonEmpty(item.text, item.title)), 5);
+  const definitions = sanitizeList(
+    analysis.definitions.map((item) => firstNonEmpty(item.text, item.title)),
+    5,
+  );
   const relevantFormulae = filterRelevantFormulaeByContext(
     analysis.formulae.map((item) => item.formula),
     formulaContext,
   );
   const formulae = analysis.formulae
-    .filter((item) => relevantFormulae.some((formula) => formula.toLowerCase() === item.formula.trim().toLowerCase()))
+    .filter((item) =>
+      relevantFormulae.some(
+        (formula) => formula.toLowerCase() === item.formula.trim().toLowerCase(),
+      ),
+    )
     .map((item) => ({
-      formula: sanitizeTeachingLine(item.formula, ""),
-      meaning: sanitizeTeachingLine(item.meaning, ""),
-      units: sanitizeTeachingLine(item.units, ""),
+      formula: displayTeachingLine(item.formula, ""),
+      meaning: displayTeachingLine(item.meaning, ""),
+      units: displayTeachingLine(item.units, ""),
     }))
     .filter((item) => item.formula.length > 0 || item.meaning.length > 0);
   const workedExamples = analysis.workedExamples
     .map((item) => ({
-      title: sanitizeTeachingLine(item.title, ""),
-      problem: sanitizeTeachingLine(item.problem, ""),
+      title: displayTeachingLine(item.title, ""),
+      problem: displayTeachingLine(item.problem, ""),
       stepLines: extractWorkedExampleStepLines(item.steps, relevantFormulae),
     }))
     .map((item) => ({
@@ -230,8 +295,11 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
     cards,
     makeCard(
       `${mainTopic} — Source Content`,
-      firstNonEmpty(sourceContent[0], definitions[0]),
-      sourceContent.slice(0, 5),
+      displayTeachingLine(
+        firstNonEmpty(sourceContent[0], definitions[0]),
+        sourceContent[0] || definitions[0] || "",
+      ),
+      sourceContent.slice(0, 5).map((line) => displayTeachingLine(line, line)),
     ),
   );
 
@@ -239,8 +307,13 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
     cards,
     makeCard(
       `${mainTopic} — Concept & Definition`,
-      firstNonEmpty(definitions[0], sourceContent[0]),
-      [...definitions.slice(1), ...revisionPoints].slice(0, 5),
+      displayTeachingLine(
+        firstNonEmpty(definitions[0], sourceContent[0]),
+        definitions[0] || sourceContent[0] || "",
+      ),
+      [...definitions.slice(1), ...revisionPoints]
+        .slice(0, 5)
+        .map((line) => displayTeachingLine(line, line)),
     ),
   );
 
@@ -252,8 +325,10 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
         `${mainTopic} — Formula & Meaning`,
         buildFormulaSummary(firstFormula.formula, firstFormula.meaning),
         [
-          firstFormula.units ? `Units: ${firstFormula.units}` : "",
-          ...formulae.slice(1).map((item) => item.formula),
+          firstFormula.units
+            ? `Units: ${displayTeachingLine(firstFormula.units, firstFormula.units)}`
+            : "",
+          ...formulae.slice(1).map((item) => displayTeachingLine(item.formula, item.formula)),
         ].filter(Boolean),
         { formula: firstFormula.formula },
       ),
@@ -264,10 +339,19 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
     const firstExample = workedExamples[0];
     const workedExampleKeyPoints = [
       ...firstExample.stepLines,
-      ...workedExamples.slice(1).flatMap((item) => item.stepLines.length > 0 ? item.stepLines : [firstNonEmpty(item.problem)]),
+      ...workedExamples
+        .slice(1)
+        .flatMap((item) =>
+          item.stepLines.length > 0 ? item.stepLines : [firstNonEmpty(item.problem)],
+        ),
     ].filter(Boolean);
 
-    if (firstExample.finalAnswer && !workedExampleKeyPoints.some((line) => line.toLowerCase() === firstExample.finalAnswer.toLowerCase())) {
+    if (
+      firstExample.finalAnswer &&
+      !workedExampleKeyPoints.some(
+        (line) => line.toLowerCase() === firstExample.finalAnswer.toLowerCase(),
+      )
+    ) {
       workedExampleKeyPoints.push(firstExample.finalAnswer);
     }
 
@@ -280,12 +364,9 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
           sourceContent.find((value) => /example|problem|solve|calculate/i.test(value)),
           firstExample.stepLines[0],
         ),
-        workedExampleKeyPoints,
+        workedExampleKeyPoints.map((line) => displayTeachingLine(line, line)),
         {
-          example: firstNonEmpty(
-            firstExample.stepLines.join("\n"),
-            firstExample.problem,
-          ),
+          example: firstNonEmpty(firstExample.stepLines.join("\n"), firstExample.problem),
         },
       ),
     );
@@ -296,9 +377,9 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
       cards,
       makeCard(
         `${mainTopic} — Diagram / Visual Explanation`,
-        visuals[0],
-        visuals.slice(1, 6),
-        { diagram: visuals[0] },
+        displayTeachingLine(visuals[0], visuals[0]),
+        visuals.slice(1, 6).map((line) => displayTeachingLine(line, line)),
+        { diagram: displayTeachingLine(visuals[0], visuals[0]) },
       ),
     );
   }
@@ -308,9 +389,9 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
       cards,
       makeCard(
         `${mainTopic} — Common Mistakes`,
-        commonMistakes[0],
-        commonMistakes.slice(1, 6),
-        { commonMistake: commonMistakes[0] },
+        displayTeachingLine(commonMistakes[0], commonMistakes[0]),
+        commonMistakes.slice(1, 6).map((line) => displayTeachingLine(line, line)),
+        { commonMistake: displayTeachingLine(commonMistakes[0], commonMistakes[0]) },
       ),
     );
   }
@@ -320,8 +401,13 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
       cards,
       makeCard(
         `${mainTopic} — Exam Importance & Revision`,
-        firstNonEmpty(examPoints[0], revisionPoints[0]),
-        [...examPoints.slice(1), ...revisionPoints].slice(0, 6),
+        displayTeachingLine(
+          firstNonEmpty(examPoints[0], revisionPoints[0]),
+          examPoints[0] || revisionPoints[0] || "",
+        ),
+        [...examPoints.slice(1), ...revisionPoints]
+          .slice(0, 6)
+          .map((line) => displayTeachingLine(line, line)),
         { examImportance: examPoints.join(" | ") },
       ),
     );
@@ -332,15 +418,17 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
       cards,
       makeCard(
         `${mainTopic} — Additional Exam Coverage`,
-        additionalCoverage[0],
-        additionalCoverage.slice(1, 6),
+        displayTeachingLine(additionalCoverage[0], additionalCoverage[0]),
+        additionalCoverage.slice(1, 6).map((line) => displayTeachingLine(line, line)),
       ),
     );
   }
 
   const deduped = cards.filter((card, index, arr) => {
     const key = `${card.title}|${card.explanation}`;
-    return arr.findIndex((candidate) => `${candidate.title}|${candidate.explanation}` === key) === index;
+    return (
+      arr.findIndex((candidate) => `${candidate.title}|${candidate.explanation}` === key) === index
+    );
   });
 
   if (deduped.length > 0) {
@@ -349,7 +437,11 @@ export function ensureMinimumDisintegrationCards(analysis: TeachingImageAnalysis
 
   const fallback = makeCard(
     `${mainTopic} — Source Content`,
-    firstNonEmpty(sourceContent[0], definitions[0], "Source understanding is insufficient to build teaching cards. Re-analyze with a clearer master image."),
+    firstNonEmpty(
+      sourceContent[0],
+      definitions[0],
+      "Source understanding is insufficient to build teaching cards. Re-analyze with a clearer master image.",
+    ),
     sourceContent.slice(1, 5),
   );
 

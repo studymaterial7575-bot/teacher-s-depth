@@ -16,6 +16,7 @@ import {
   sanitizeEducationalText,
   sanitizeEducationalTextByContext,
 } from "@/lib/teaching-engine/contentIntegrity";
+import { formatMathDisplayText } from "@/lib/teaching-engine/mathDisplay";
 import { clearTeachingRunDerivedState, STORAGE_KEYS, useLocalStorage } from "@/lib/storage";
 import type {
   ExtractedContent,
@@ -138,17 +139,32 @@ function resolveExtractedForWorkflow(
   extracted: ExtractedContent,
   sourceExtraction: MasterImageWorkflowProps["sourceExtraction"],
 ): ExtractedContent {
-  const sourceText = sanitizeEducationalText(sourceExtraction.extractedText || extracted.ocrText || "");
-  const subject = pickResolvedMetadataValue(extracted.subject, sourceExtraction.metadata.subject, "Not identified");
-  const chapter = pickResolvedMetadataValue(extracted.chapter, sourceExtraction.metadata.chapter, "Not identified");
-  const topic = pickResolvedMetadataValue(extracted.topic, sourceExtraction.metadata.topic, "Not identified");
-  const inferredConcept = /\bconcave\b/i.test(sourceText) && /\bconvex\b/i.test(sourceText)
-    ? "Concave/Convex Mirror"
-    : /\bconcave\b/i.test(sourceText)
-      ? "Concave Mirror"
-      : /\bconvex\b/i.test(sourceText)
-        ? "Convex Mirror"
-        : "";
+  const sourceText = sanitizeEducationalText(
+    sourceExtraction.extractedText || extracted.ocrText || "",
+  );
+  const subject = pickResolvedMetadataValue(
+    extracted.subject,
+    sourceExtraction.metadata.subject,
+    "Not identified",
+  );
+  const chapter = pickResolvedMetadataValue(
+    extracted.chapter,
+    sourceExtraction.metadata.chapter,
+    "Not identified",
+  );
+  const topic = pickResolvedMetadataValue(
+    extracted.topic,
+    sourceExtraction.metadata.topic,
+    "Not identified",
+  );
+  const inferredConcept =
+    /\bconcave\b/i.test(sourceText) && /\bconvex\b/i.test(sourceText)
+      ? "Concave/Convex Mirror"
+      : /\bconcave\b/i.test(sourceText)
+        ? "Concave Mirror"
+        : /\bconvex\b/i.test(sourceText)
+          ? "Convex Mirror"
+          : "";
   const concept = pickKnownValue(extracted.concept, inferredConcept) || "Not identified";
   const rawContext = `${subject} ${sourceExtraction.metadata.board} ${sourceExtraction.metadata.classLevel} ${chapter} ${topic} ${sourceText}`;
   const formulae = filterRelevantFormulaeByContext(extracted.formulae, rawContext);
@@ -161,10 +177,26 @@ function resolveExtractedForWorkflow(
     chapter,
     topic,
     concept,
-    board: pickResolvedMetadataValue(extracted.board, sourceExtraction.metadata.board, "Not identified"),
-    classLevel: pickResolvedMetadataValue(extracted.classLevel, sourceExtraction.metadata.classLevel, "Not identified"),
-    questionType: pickResolvedMetadataValue(extracted.questionType, sourceExtraction.metadata.questionType, "Not identified"),
-    language: pickResolvedMetadataValue(extracted.language, sourceExtraction.metadata.language, "English"),
+    board: pickResolvedMetadataValue(
+      extracted.board,
+      sourceExtraction.metadata.board,
+      "Not identified",
+    ),
+    classLevel: pickResolvedMetadataValue(
+      extracted.classLevel,
+      sourceExtraction.metadata.classLevel,
+      "Not identified",
+    ),
+    questionType: pickResolvedMetadataValue(
+      extracted.questionType,
+      sourceExtraction.metadata.questionType,
+      "Not identified",
+    ),
+    language: pickResolvedMetadataValue(
+      extracted.language,
+      sourceExtraction.metadata.language,
+      "English",
+    ),
     formulae,
   };
 }
@@ -188,25 +220,52 @@ function buildGeneralExamCoverage(topic: string, subject: string) {
   ];
 }
 
-export function buildMasterImageSpec(extracted: ExtractedContent, teachingResponse: string, prompt: string, sourceText = "") {
+function isLanguageSubject(subject: string, topic: string) {
+  return /\b(english|hindi|marathi|language|grammar|literature|tense|voice)\b/i.test(
+    `${subject} ${topic}`,
+  );
+}
+
+function isStemSubject(subject: string) {
+  return /\b(mathematics|math|physics|chemistry|biology|science|computer|commerce)\b/i.test(
+    subject,
+  );
+}
+
+export function buildMasterImageSpec(
+  extracted: ExtractedContent,
+  teachingResponse: string,
+  prompt: string,
+  sourceText = "",
+) {
   const rawContext = `${extracted.subject} ${extracted.board} ${extracted.classLevel} ${extracted.chapter} ${extracted.topic} ${sourceText} ${teachingResponse}`;
   const cleanTeachingResponse = sanitizeEducationalTextByContext(teachingResponse, rawContext);
   const cleanSourceText = sanitizeEducationalTextByContext(sourceText, rawContext);
   const formulaContext = `${extracted.subject} ${extracted.board} ${extracted.classLevel} ${extracted.chapter} ${extracted.topic} ${cleanSourceText} ${cleanTeachingResponse}`;
-  const inlineFormulaCandidates = Array.from(cleanTeachingResponse.matchAll(/[A-Za-z][A-Za-z0-9]*\s*=\s*[^\n,.;]+/g)).map((item) => item[0]);
-  const keyFormulas = filterRelevantFormulaeByContext([...extracted.formulae, ...inlineFormulaCandidates], formulaContext);
+  const inlineFormulaCandidates = Array.from(
+    cleanTeachingResponse.matchAll(/[A-Za-z][A-Za-z0-9]*\s*=\s*[^\n,.;]+/g),
+  ).map((item) => item[0]);
+  const keyFormulas = filterRelevantFormulaeByContext(
+    [...extracted.formulae, ...inlineFormulaCandidates],
+    formulaContext,
+  );
   const fallbackFormula = getContextAwareFallbackFormula(formulaContext);
-  const formulaCandidates = keyFormulas.length > 0
-    ? keyFormulas
-    : fallbackFormula
-      ? [fallbackFormula]
-      : ["Identify formulae from teaching response"];
-  const keyDiagrams = extracted.diagrams.length > 0 ? extracted.diagrams : ["Create one clear labeled educational diagram"]; 
+  const formulaCandidates =
+    keyFormulas.length > 0
+      ? keyFormulas
+      : fallbackFormula
+        ? [fallbackFormula]
+        : ["Identify formulae from teaching response"];
+  const keyDiagrams =
+    extracted.diagrams.length > 0
+      ? extracted.diagrams
+      : ["Create one clear labeled educational diagram"];
   const responseHighlights = safeLines(cleanTeachingResponse, 16);
   const sourceHighlights = safeLines(cleanSourceText, 10);
   const promptHighlights = safeLines(sanitizeEducationalTextByContext(prompt, formulaContext), 10);
   const topic = extracted.topic !== "Not identified" ? extracted.topic : "Detected Topic";
   const subject = extracted.subject !== "Not identified" ? extracted.subject : "Detected Subject";
+  const isLanguage = isLanguageSubject(subject, topic);
   const knownAcademicContext = hasKnownAcademicContext(extracted);
   const coverageNote = knownAcademicContext
     ? `Gap-check using detected board/class context: ${extracted.board} / ${extracted.classLevel}.`
@@ -216,6 +275,14 @@ export function buildMasterImageSpec(extracted: ExtractedContent, teachingRespon
     "Create a single comprehensive educational infographic covering the complete topic, organized into clearly separated logical teaching sections, with simple classroom language, readable formulas, labelled diagrams, worked examples, common mistakes, exam points and revision points.",
     "This is a MASTER LEARNING IMAGE for teacher-led classroom use, not a decorative poster.",
     "Do not summarize only the uploaded page. Perform exam-completeness gap check for the same topic.",
+    "You are creating ONE MASTER LEARNING IMAGE for teacher-led classroom use.",
+    "Use the supplied source as the primary truth.",
+    "Perform a same-topic completeness check.",
+    "Separate source-derived content from clearly labelled additional exam coverage.",
+    "Do not invent unsupported source content.",
+    "Do not create mathematical formulas for non-mathematical subjects.",
+    "Create genuinely useful labelled visuals where appropriate.",
+    "Do not merely reproduce the existing teaching cards.",
     "",
     `Subject: ${subject}`,
     `Chapter: ${extracted.chapter}`,
@@ -240,6 +307,9 @@ export function buildMasterImageSpec(extracted: ExtractedContent, teachingRespon
     "- IMPORTANT ADDITIONAL EXAM COVERAGE must include missing but relevant same-topic concepts.",
     "- Mark additional items clearly and do not claim they came from source.",
     "- Avoid unsupported exam probability claims.",
+    isLanguage
+      ? "- For language/grammar topics, use grammar structures/rules/examples/timelines instead of mathematical formulas."
+      : "- For math/science topics, include accurate formulas, labelled diagrams, and worked examples where relevant.",
     "",
     "Formula candidates:",
     ...formulaCandidates.map((line) => `- ${line}`),
@@ -248,13 +318,19 @@ export function buildMasterImageSpec(extracted: ExtractedContent, teachingRespon
     ...keyDiagrams.map((line) => `- ${line}`),
     "",
     "Use this source content as primary truth:",
-    ...(sourceHighlights.length > 0 ? sourceHighlights.map((line) => `- ${line}`) : ["- No direct source text provided"]),
+    ...(sourceHighlights.length > 0
+      ? sourceHighlights.map((line) => `- ${line}`)
+      : ["- No direct source text provided"]),
     "",
     "Use this teaching-response content as secondary support:",
-    ...(responseHighlights.length > 0 ? responseHighlights.map((line) => `- ${line}`) : ["- No direct teaching response provided"]),
+    ...(responseHighlights.length > 0
+      ? responseHighlights.map((line) => `- ${line}`)
+      : ["- No direct teaching response provided"]),
     "",
     "Use this generated prompt context as secondary support:",
-    ...(promptHighlights.length > 0 ? promptHighlights.map((line) => `- ${line}`) : ["- No prompt context provided"]),
+    ...(promptHighlights.length > 0
+      ? promptHighlights.map((line) => `- ${line}`)
+      : ["- No prompt context provided"]),
     "",
     "Design constraints:",
     "- Keep typography highly readable for mobile screenshots and classroom display.",
@@ -293,13 +369,21 @@ function buildLocalTeachingSections(extracted: ExtractedContent, teachingRespons
   const topic = extracted.topic !== "Not identified" ? extracted.topic : "Detected Topic";
   const chapter = extracted.chapter !== "Not identified" ? extracted.chapter : "Detected Chapter";
   const subject = extracted.subject !== "Not identified" ? extracted.subject : "Detected Subject";
+  const isLanguage = isLanguageSubject(subject, topic);
+  const isStem = isStemSubject(subject);
   const formulaContext = `${extracted.subject} ${extracted.board} ${extracted.classLevel} ${extracted.chapter} ${extracted.topic} ${cleanedTeachingResponse}`;
-  const formula = filterRelevantFormulaeByContext(
-    [...extracted.formulae, detectPrimaryFormula(cleanedTeachingResponse)],
-    formulaContext,
-  )[0] ?? (getContextAwareFallbackFormula(formulaContext) || "Formula not explicitly detected");
+  const formula =
+    filterRelevantFormulaeByContext(
+      [...extracted.formulae, detectPrimaryFormula(cleanedTeachingResponse)],
+      formulaContext,
+    )[0] ??
+    (getContextAwareFallbackFormula(formulaContext) || "Formula not explicitly detected");
   const variableMeanings = fallbackVariableMeaning(formula);
   const keyPoints = safeLines(cleanedTeachingResponse, 18);
+  const sourceGrounded = safeLines(
+    [extracted.cleanedOcrText, cleanedTeachingResponse].filter(Boolean).join("\n"),
+    8,
+  );
   const knownAcademicContext = hasKnownAcademicContext(extracted);
   const additionalCoverage = knownAcademicContext
     ? [
@@ -311,10 +395,15 @@ function buildLocalTeachingSections(extracted: ExtractedContent, teachingRespons
   const sections: TeachingSection[] = [
     {
       heading: `A. SOURCE CONTENT - ${topic} (${chapter})`,
-      lines: [
-        firstSentence(cleanedTeachingResponse, "Concept summary based on the generated teaching response."),
-        `Subject: ${extracted.subject}`,
-      ],
+      lines:
+        sourceGrounded.length > 0
+          ? sourceGrounded.slice(0, 6)
+          : [
+              firstSentence(
+                cleanedTeachingResponse,
+                "Concept summary based on supplied topic context.",
+              ),
+            ],
     },
     {
       heading: "B. IMPORTANT ADDITIONAL EXAM COVERAGE",
@@ -322,35 +411,64 @@ function buildLocalTeachingSections(extracted: ExtractedContent, teachingRespons
     },
     {
       heading: "C. FORMULAS / CONCEPTS",
-      lines: [
-        firstSentence(cleanedTeachingResponse, "Definition and concept extracted from response."),
-        "Important condition: apply concept only under valid assumptions given in class.",
-        `Formula: ${formula}`,
-        ...variableMeanings,
-        "Include SI units while teaching and solving.",
-      ],
+      lines: isLanguage
+        ? [
+            "Use grammar structures/rules/patterns from the supplied topic context.",
+            firstSentence(
+              cleanedTeachingResponse,
+              "Explain the concept in simple classroom language.",
+            ),
+            "Avoid mathematical formulas for this non-mathematical topic.",
+          ]
+        : [
+            firstSentence(
+              cleanedTeachingResponse,
+              "Definition and concept extracted from response.",
+            ),
+            "Apply the concept only under valid assumptions given in class.",
+            `Formula: ${formula}`,
+            ...variableMeanings,
+          ],
     },
     {
       heading: "D. VISUALS / DIAGRAMS",
-      lines: [
-        "Draw one clean board diagram with labels.",
-        "Explain logical relationship visually.",
-        ...((extracted.diagrams.length > 0 ? extracted.diagrams : ["Add labels for all key parts"]).slice(0, 2)),
-      ],
+      lines: isLanguage
+        ? [
+            "Create a clearly labelled topic timeline/structure chart when appropriate.",
+            "Use examples directly tied to the supplied topic context.",
+          ]
+        : [
+            "Draw one clean board diagram with labels.",
+            "Explain logical relationship visually.",
+            ...(extracted.diagrams.length > 0
+              ? extracted.diagrams
+              : ["Add labels for all key parts"]
+            ).slice(0, 2),
+          ],
     },
     {
       heading: "E. WORKED EXAMPLES",
-      lines: [
-        "Use a small-number example with step-by-step substitution.",
-        ...(extracted.numericalQuestions.slice(0, 2)),
-      ],
+      lines: isStem
+        ? [
+            "Use a source-relevant step-by-step worked example.",
+            ...extracted.numericalQuestions.slice(0, 2),
+          ]
+        : [
+            "Use a source-relevant worked language example (usage/transformation/application).",
+            ...safeLines(cleanedTeachingResponse, 3),
+          ],
     },
     {
       heading: "F. COMMON MISTAKES",
-      lines: [
-        "Wrong unit usage or wrong substitution order.",
-        "Write formula first, then substitute values clearly.",
-      ],
+      lines: isLanguage
+        ? [
+            "Mixing grammar structures or tense forms in the wrong context.",
+            "Using forms without checking subject-verb agreement and time reference.",
+          ]
+        : [
+            "Wrong unit usage or wrong substitution order.",
+            "Write formula first, then substitute values clearly.",
+          ],
     },
     {
       heading: "G. EXAM-IMPORTANT AREAS",
@@ -371,15 +489,25 @@ function buildLocalTeachingSections(extracted: ExtractedContent, teachingRespons
     },
     {
       heading: "I. QUICK REVISION",
-      lines: keyPoints.length > 0 ? keyPoints.slice(0, 5) : ["Revision bullets based on teaching response."],
+      lines:
+        keyPoints.length > 0
+          ? keyPoints.slice(0, 5)
+          : ["Revision bullets based on teaching response."],
     },
   ];
 
   return sections;
 }
 
-function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) {
-  const words = text.split(" ");
+function wrapCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+) {
+  const words = formatMathDisplayText(text).split(" ");
   let line = "";
   let cursorY = y;
 
@@ -402,7 +530,10 @@ function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, x: number, 
   return cursorY;
 }
 
-async function generateLocalTeachingImageDataUrl(extracted: ExtractedContent, teachingResponse: string) {
+async function generateLocalTeachingImageDataUrl(
+  extracted: ExtractedContent,
+  teachingResponse: string,
+) {
   const width = 1400;
   const height = 2000;
   const canvas = document.createElement("canvas");
@@ -452,7 +583,7 @@ async function generateLocalTeachingImageDataUrl(extracted: ExtractedContent, te
 
     ctx.fillStyle = "#f8fafc";
     ctx.font = "700 24px Arial";
-    ctx.fillText(`${index + 1}. ${section.heading}`, boxX + 14, boxY + 28);
+    ctx.fillText(`${index + 1}. ${formatMathDisplayText(section.heading)}`, boxX + 14, boxY + 28);
 
     ctx.fillStyle = textDark;
     ctx.font = "500 20px Arial";
@@ -460,7 +591,14 @@ async function generateLocalTeachingImageDataUrl(extracted: ExtractedContent, te
     let lineY = boxY + 66;
     const maxLineWidth = cardWidth - 28;
     for (const line of section.lines.slice(0, 6)) {
-      lineY = wrapCanvasText(ctx, `- ${line}`, boxX + 14, lineY, maxLineWidth, 24);
+      lineY = wrapCanvasText(
+        ctx,
+        `- ${formatMathDisplayText(line)}`,
+        boxX + 14,
+        lineY,
+        maxLineWidth,
+        24,
+      );
       if (lineY > boxY + boxHeight - 16) break;
     }
 
@@ -477,26 +615,35 @@ async function generateLocalTeachingImageDataUrl(extracted: ExtractedContent, te
   return canvas.toDataURL("image/png");
 }
 
-function fallbackAnalysisFromContext(extracted: ExtractedContent, teachingResponse: string): TeachingImageAnalysisResult {
+function fallbackAnalysisFromContext(
+  extracted: ExtractedContent,
+  teachingResponse: string,
+): TeachingImageAnalysisResult {
   const cleanedTeachingResponse = sanitizeEducationalText(teachingResponse);
   const formulaContext = `${extracted.subject} ${extracted.board} ${extracted.classLevel} ${extracted.chapter} ${extracted.topic} ${cleanedTeachingResponse}`;
-  const formula = filterRelevantFormulaeByContext(
-    [...extracted.formulae, detectPrimaryFormula(cleanedTeachingResponse)],
-    formulaContext,
-  )[0] ?? (getContextAwareFallbackFormula(formulaContext) || "Formula not explicitly detected");
+  const formula =
+    filterRelevantFormulaeByContext(
+      [...extracted.formulae, detectPrimaryFormula(cleanedTeachingResponse)],
+      formulaContext,
+    )[0] ??
+    (getContextAwareFallbackFormula(formulaContext) || "Formula not explicitly detected");
   const topic = extracted.topic !== "Not identified" ? extracted.topic : "Detected Topic";
   const chapter = extracted.chapter !== "Not identified" ? extracted.chapter : "Detected Chapter";
   const points = safeLines(cleanedTeachingResponse, 14);
   const knownAcademicContext = hasKnownAcademicContext(extracted);
-  const sourceContent = points.length > 0
-    ? points.slice(0, 6)
-    : ["Source content unavailable. Use uploaded source + teacher response."];
+  const sourceContent =
+    points.length > 0
+      ? points.slice(0, 6)
+      : ["Source content unavailable. Use uploaded source + teacher response."];
   const additionalExamCoverage = knownAcademicContext
     ? [
         `Missing same-topic exam coverage for ${extracted.board} ${extracted.classLevel}.`,
         "Include extra conceptual and application forms likely asked in exams.",
       ]
-    : buildGeneralExamCoverage(topic, extracted.subject !== "Not identified" ? extracted.subject : "Detected Subject");
+    : buildGeneralExamCoverage(
+        topic,
+        extracted.subject !== "Not identified" ? extracted.subject : "Detected Subject",
+      );
 
   const definitions = [
     {
@@ -505,15 +652,23 @@ function fallbackAnalysisFromContext(extracted: ExtractedContent, teachingRespon
     },
   ];
 
-  const formulae = formula && formula !== "Formula not explicitly detected"
-    ? [{ formula, meaning: "Use this formula to relate key variables in the topic.", units: "Use standard SI units as applicable." }]
-    : [];
+  const formulae =
+    formula && formula !== "Formula not explicitly detected"
+      ? [
+          {
+            formula,
+            meaning: "Use this formula to relate key variables in the topic.",
+            units: "Use standard SI units as applicable.",
+          },
+        ]
+      : [];
 
   const workedExamples = [
     {
       title: "Worked Example",
       problem: extracted.numericalQuestions[0] ?? `Solve one classroom problem from ${topic}.`,
-      steps: "1) Write formula\n2) Substitute values with units\n3) Solve carefully\n4) State final answer with unit",
+      steps:
+        "1) Write formula\n2) Substitute values with units\n3) Solve carefully\n4) State final answer with unit",
     },
   ];
 
@@ -537,7 +692,10 @@ function fallbackAnalysisFromContext(extracted: ExtractedContent, teachingRespon
     "Reasoning/conceptual questions",
   ];
 
-  const revisionPoints = points.length > 0 ? points.slice(0, 5) : ["Revise definition, formula, and one worked example."];
+  const revisionPoints =
+    points.length > 0
+      ? points.slice(0, 5)
+      : ["Revise definition, formula, and one worked example."];
 
   const cards: TeachingCard[] = [
     {
@@ -593,8 +751,15 @@ function fallbackAnalysisFromContext(extracted: ExtractedContent, teachingRespon
     definitions,
     formulae,
     workedExamples,
-    diagrams: [{ title: "Classroom Diagram", description: extracted.diagrams[0] ?? "Draw and label a simple conceptual diagram." }],
-    tables: extracted.hasTables ? [{ title: "Detected Table", description: "A summary table is present in source context." }] : [],
+    diagrams: [
+      {
+        title: "Classroom Diagram",
+        description: extracted.diagrams[0] ?? "Draw and label a simple conceptual diagram.",
+      },
+    ],
+    tables: extracted.hasTables
+      ? [{ title: "Detected Table", description: "A summary table is present in source context." }]
+      : [],
     importantFacts: points.slice(0, 4),
     examPoints,
     commonQuestionTypes,
@@ -614,7 +779,8 @@ function mergeCardsFromAnalysis(analysis: TeachingImageAnalysisResult) {
   if (analysis.mainTopic) {
     fallbackCards.push({
       title: `${analysis.mainTopic} - Basic Idea`,
-      explanation: analysis.definitions[0]?.text ?? "Core idea extracted from master learning image.",
+      explanation:
+        analysis.definitions[0]?.text ?? "Core idea extracted from master learning image.",
       keyPoints: analysis.importantFacts.slice(0, 4),
     });
   }
@@ -675,7 +841,10 @@ function formatBytes(bytes: number) {
 
 function isLikelyMobileBrowser() {
   if (typeof navigator === "undefined") return false;
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.matchMedia("(pointer: coarse)").matches;
+  return (
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    window.matchMedia("(pointer: coarse)").matches
+  );
 }
 
 async function triggerBrowserDownload(blob: Blob, fileName: string) {
@@ -698,7 +867,8 @@ async function triggerBrowserDownload(blob: Blob, fileName: string) {
     try {
       a.click();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "The browser blocked the automatic download.";
+      const message =
+        error instanceof Error ? error.message : "The browser blocked the automatic download.";
       throw new Error(`The browser blocked the automatic download. ${message}`);
     } finally {
       a.remove();
@@ -794,12 +964,19 @@ async function renderTeachingCardBlob(card: TeachingCard, cardIndex: number, tot
 
   ctx.fillStyle = accent;
   ctx.font = "700 34px Arial";
-  y = wrapCanvasText(ctx, card.title || "Untitled", x, y, maxWidth, 42);
+  y = wrapCanvasText(ctx, formatMathDisplayText(card.title || "Untitled"), x, y, maxWidth, 42);
 
   ctx.fillStyle = text;
   ctx.font = "500 24px Arial";
   y += 12;
-  y = wrapCanvasText(ctx, card.explanation || "No explanation available.", x, y, maxWidth, 34);
+  y = wrapCanvasText(
+    ctx,
+    formatMathDisplayText(card.explanation || "No explanation available."),
+    x,
+    y,
+    maxWidth,
+    34,
+  );
 
   if (card.keyPoints.length > 0) {
     y += 18;
@@ -810,17 +987,17 @@ async function renderTeachingCardBlob(card: TeachingCard, cardIndex: number, tot
     ctx.fillStyle = text;
     ctx.font = "500 22px Arial";
     for (const point of card.keyPoints.slice(0, 8)) {
-      y = wrapCanvasText(ctx, `- ${point}`, x, y, maxWidth, 30);
+      y = wrapCanvasText(ctx, `- ${formatMathDisplayText(point)}`, x, y, maxWidth, 30);
       if (y > height - 150) break;
     }
   }
 
   const detailLines = [
-    card.formula ? `Formula: ${card.formula}` : "",
-    card.diagram ? `Diagram: ${card.diagram}` : "",
-    card.example ? `Example: ${card.example}` : "",
-    card.examImportance ? `Exam Importance: ${card.examImportance}` : "",
-    card.commonMistake ? `Common Mistake: ${card.commonMistake}` : "",
+    card.formula ? `Formula: ${formatMathDisplayText(card.formula)}` : "",
+    card.diagram ? `Diagram: ${formatMathDisplayText(card.diagram)}` : "",
+    card.example ? `Example: ${formatMathDisplayText(card.example)}` : "",
+    card.examImportance ? `Exam Importance: ${formatMathDisplayText(card.examImportance)}` : "",
+    card.commonMistake ? `Common Mistake: ${formatMathDisplayText(card.commonMistake)}` : "",
   ].filter(Boolean);
 
   if (detailLines.length > 0 && y < height - 120) {
@@ -886,13 +1063,24 @@ async function renderTeachingCardsSheetBlob(cards: TeachingCard[]) {
     ctx.fillRect(40, y, cardWidth, 46);
     ctx.fillStyle = "#ffffff";
     ctx.font = "700 24px Arial";
-    ctx.fillText(`Card ${index + 1}: ${card.title || "Untitled"}`, 58, y + 30);
+    ctx.fillText(
+      `Card ${index + 1}: ${formatMathDisplayText(card.title || "Untitled")}`,
+      58,
+      y + 30,
+    );
 
     let lineY = y + 82;
     const maxWidth = cardWidth - 36;
     ctx.fillStyle = "#0f172a";
     ctx.font = "500 22px Arial";
-    lineY = wrapCanvasText(ctx, card.explanation || "No explanation available.", 58, lineY, maxWidth, 30);
+    lineY = wrapCanvasText(
+      ctx,
+      formatMathDisplayText(card.explanation || "No explanation available."),
+      58,
+      lineY,
+      maxWidth,
+      30,
+    );
 
     if (card.keyPoints.length > 0) {
       lineY += 14;
@@ -903,15 +1091,15 @@ async function renderTeachingCardsSheetBlob(cards: TeachingCard[]) {
       ctx.fillStyle = "#0f172a";
       ctx.font = "500 20px Arial";
       for (const point of card.keyPoints.slice(0, 5)) {
-        lineY = wrapCanvasText(ctx, `- ${point}`, 58, lineY, maxWidth, 28);
+        lineY = wrapCanvasText(ctx, `- ${formatMathDisplayText(point)}`, 58, lineY, maxWidth, 28);
       }
     }
 
     const detailLines = [
-      card.formula ? `Formula: ${card.formula}` : "",
-      card.diagram ? `Diagram: ${card.diagram}` : "",
-      card.example ? `Example: ${card.example}` : "",
-      card.examImportance ? `Exam Importance: ${card.examImportance}` : "",
+      card.formula ? `Formula: ${formatMathDisplayText(card.formula)}` : "",
+      card.diagram ? `Diagram: ${formatMathDisplayText(card.diagram)}` : "",
+      card.example ? `Example: ${formatMathDisplayText(card.example)}` : "",
+      card.examImportance ? `Exam Importance: ${formatMathDisplayText(card.examImportance)}` : "",
     ].filter(Boolean);
 
     if (detailLines.length > 0) {
@@ -937,25 +1125,23 @@ async function renderTeachingCardsSheetBlob(cards: TeachingCard[]) {
   });
 }
 
-export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: MasterImageWorkflowProps) {
+export function MasterImageWorkflow({
+  extracted,
+  prompt,
+  sourceExtraction,
+}: MasterImageWorkflowProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const [teachingResponse, setTeachingResponse] = useLocalStorage(
     STORAGE_KEYS.teachingEngineResponse,
     "",
   );
-  const [imageSpec, setImageSpec] = useLocalStorage(
-    STORAGE_KEYS.teachingEngineImageSpec,
-    "",
-  );
+  const [imageSpec, setImageSpec] = useLocalStorage(STORAGE_KEYS.teachingEngineImageSpec, "");
   const [analysis, setAnalysis] = useLocalStorage<TeachingImageAnalysisResult>(
     STORAGE_KEYS.teachingEngineImageAnalysis,
     EMPTY_ANALYSIS,
   );
-  const [cards, setCards] = useLocalStorage<TeachingCard[]>(
-    STORAGE_KEYS.teachingEngineCards,
-    [],
-  );
+  const [cards, setCards] = useLocalStorage<TeachingCard[]>(STORAGE_KEYS.teachingEngineCards, []);
 
   const [masterImageFile, setMasterImageFile] = useState<File | null>(null);
   const [masterImageUrl, setMasterImageUrl] = useState<string>("");
@@ -1004,20 +1190,31 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   const hasAnalysis = analysis.mainTopic.trim().length > 0 || analysis.cards.length > 0;
   const canShareExport = useMemo(() => {
     if (typeof navigator === "undefined") return false;
-    const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void>; canShare?: (data: ShareData) => boolean };
+    const nav = navigator as Navigator & {
+      share?: (data: ShareData) => Promise<void>;
+      canShare?: (data: ShareData) => boolean;
+    };
     return !!nav.share;
   }, []);
 
   const currentSourceSignature = useMemo(
-    () => JSON.stringify({
-      sourceText: sourceExtraction.extractedText,
-      subject: extracted.subject,
-      chapter: extracted.chapter,
-      topic: extracted.topic,
-      board: extracted.board,
-      classLevel: extracted.classLevel,
-    }),
-    [extracted.board, extracted.chapter, extracted.classLevel, extracted.subject, extracted.topic, sourceExtraction.extractedText],
+    () =>
+      JSON.stringify({
+        sourceText: sourceExtraction.extractedText,
+        subject: extracted.subject,
+        chapter: extracted.chapter,
+        topic: extracted.topic,
+        board: extracted.board,
+        classLevel: extracted.classLevel,
+      }),
+    [
+      extracted.board,
+      extracted.chapter,
+      extracted.classLevel,
+      extracted.subject,
+      extracted.topic,
+      sourceExtraction.extractedText,
+    ],
   );
 
   const lastSourceSignatureRef = useRef<string>("");
@@ -1038,17 +1235,19 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   useEffect(() => {
     let active = true;
 
-    void loadMasterTeachingImage().then(async (file) => {
-      if (!active || !file) return;
-      const url = await fileToDataUrl(file);
-      const meta = await imageMetaFromFile(file);
-      if (!active) return;
-      setMasterImageFile(file);
-      setMasterImageUrl(url);
-      setMasterImageMeta(meta);
-    }).catch(() => {
-      // Ignore hydration failures for image persistence.
-    });
+    void loadMasterTeachingImage()
+      .then(async (file) => {
+        if (!active || !file) return;
+        const url = await fileToDataUrl(file);
+        const meta = await imageMetaFromFile(file);
+        if (!active) return;
+        setMasterImageFile(file);
+        setMasterImageUrl(url);
+        setMasterImageMeta(meta);
+      })
+      .catch(() => {
+        // Ignore hydration failures for image persistence.
+      });
 
     return () => {
       active = false;
@@ -1115,7 +1314,14 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
     const rawContext = `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic} ${sourceExtraction.extractedText} ${teachingResponse}`;
     const cleanedTeachingResponse = sanitizeEducationalTextByContext(teachingResponse, rawContext);
     const cleanedPrompt = sanitizeEducationalTextByContext(prompt, rawContext);
-    const finalSpec = imageSpec.trim() || buildMasterImageSpec(resolvedExtracted, cleanedTeachingResponse, cleanedPrompt, sourceExtraction.extractedText);
+    const finalSpec =
+      imageSpec.trim() ||
+      buildMasterImageSpec(
+        resolvedExtracted,
+        cleanedTeachingResponse,
+        cleanedPrompt,
+        sourceExtraction.extractedText,
+      );
 
     setIsGeneratingImage(true);
     setWorkflowError(null);
@@ -1140,8 +1346,12 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         dataUrl = payload.dataUrl;
         notice = "Master teaching image generated using local prompt-builder rendering.";
       } catch {
-        dataUrl = await generateLocalTeachingImageDataUrl(resolvedExtracted, cleanedTeachingResponse || cleanedPrompt);
-        notice = "Generated a local comprehensive master teaching image from current teaching response.";
+        dataUrl = await generateLocalTeachingImageDataUrl(
+          resolvedExtracted,
+          cleanedTeachingResponse || cleanedPrompt,
+        );
+        notice =
+          "Generated a local comprehensive master teaching image from current teaching response.";
       }
 
       const file = dataUrlToFile(dataUrl, `master-learning-image-${Date.now()}.png`);
@@ -1175,7 +1385,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       setMasterImageUrl(url);
       setMasterImageMeta(meta);
       await saveMasterTeachingImage(selected);
-      setWorkflowNotice("Master teaching image imported successfully. Running automatic structured disintegration...");
+      setWorkflowNotice(
+        "Master teaching image imported successfully. Running automatic structured disintegration...",
+      );
       await runAutomaticDisintegration({ file: selected, dataUrl: url, origin: "imported" });
     } catch {
       setWorkflowError("Unable to read selected image.");
@@ -1219,13 +1431,22 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
           subject: resolvedExtracted.subject,
           chapter: resolvedExtracted.chapter,
           topic: resolvedExtracted.topic,
-          teachingResponse: sanitizeEducationalTextByContext(teachingResponse, `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic} ${sourceExtraction.extractedText}`),
-          sourceExtractedText: sanitizeEducationalTextByContext(sourceExtraction.extractedText, `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic}`),
+          teachingResponse: sanitizeEducationalTextByContext(
+            teachingResponse,
+            `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic} ${sourceExtraction.extractedText}`,
+          ),
+          sourceExtractedText: sanitizeEducationalTextByContext(
+            sourceExtraction.extractedText,
+            `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic}`,
+          ),
           sourceFormulae: filterRelevantFormulaeByContext(
             resolvedExtracted.formulae,
             `${resolvedExtracted.subject} ${resolvedExtracted.board} ${resolvedExtracted.classLevel} ${resolvedExtracted.chapter} ${resolvedExtracted.topic} ${sourceExtraction.extractedText}`,
           ),
-          sourceNumericalQuestions: sanitizeEducationalLines(resolvedExtracted.numericalQuestions, 8),
+          sourceNumericalQuestions: sanitizeEducationalLines(
+            resolvedExtracted.numericalQuestions,
+            8,
+          ),
           sourceExtractionMetadata: {
             ...sourceExtraction.metadata,
             subject: resolvedExtracted.subject,
@@ -1266,7 +1487,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       };
       setAnalysis(nextAnalysis);
       if (!options?.suppressNotice) {
-        setWorkflowNotice("Master image structurally analyzed using prompt-builder local workflow.");
+        setWorkflowNotice(
+          "Master image structurally analyzed using prompt-builder local workflow.",
+        );
       }
       return nextAnalysis;
     } catch (error) {
@@ -1300,12 +1523,16 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
     try {
       const merged = ensureMinimumDisintegrationCards(sourceAnalysis ?? analysis);
       if (merged.length === 0) {
-        throw new Error("No cards could be derived from this image. Try re-analyzing with a clearer image.");
+        throw new Error(
+          "No cards could be derived from this image. Try re-analyzing with a clearer image.",
+        );
       }
       setCards(merged);
       setActiveCardIndex(0);
       if (!options?.suppressNotice) {
-        setWorkflowNotice(`Created ${merged.length} teaching cards in logical sequence with coverage safeguards.`);
+        setWorkflowNotice(
+          `Created ${merged.length} teaching cards in logical sequence with coverage safeguards.`,
+        );
       }
       return merged;
     } catch (error) {
@@ -1335,17 +1562,17 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         throw new Error("Teaching cards are not available yet.");
       }
 
-      const pngBlob = cards.length === 1
-        ? await renderTeachingCardBlob(cards[0], 0, 1)
-        : await renderTeachingCardsSheetBlob(cards);
+      const pngBlob =
+        cards.length === 1
+          ? await renderTeachingCardBlob(cards[0], 0, 1)
+          : await renderTeachingCardsSheetBlob(cards);
 
       if (pngBlob.size <= 0 || pngBlob.type !== "image/png") {
         throw new Error("Teaching cards file could not be generated.");
       }
 
-      const fileName = cards.length === 1
-        ? "Teacher-Depth-Teaching-Card.png"
-        : "Teacher-Depth-Teaching-Cards.png";
+      const fileName =
+        cards.length === 1 ? "Teacher-Depth-Teaching-Card.png" : "Teacher-Depth-Teaching-Cards.png";
       const exportFile = makeFileFromBlob(pngBlob, fileName, "image/png");
 
       await triggerBrowserDownload(exportFile, fileName);
@@ -1356,7 +1583,10 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         message: "Teaching Cards downloaded successfully.",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Teaching cards generation failed. Please try again.";
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Teaching cards generation failed. Please try again.";
       console.error("Teaching cards export failed", error);
       setWorkflowError(message);
       setExportStatus({
@@ -1401,20 +1631,24 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
 
         y += 24;
         pdf.setFontSize(14);
-        pdf.text(card.title || "Untitled", left, y);
+        pdf.text(formatMathDisplayText(card.title || "Untitled"), left, y);
 
         y += 20;
         pdf.setFont("helvetica", "normal");
         pdf.setFontSize(11);
 
         const lines = [
-          `Explanation: ${card.explanation || "-"}`,
-          card.formula ? `Formula: ${card.formula}` : "",
-          card.diagram ? `Diagram: ${card.diagram}` : "",
-          card.example ? `Example: ${card.example}` : "",
-          card.examImportance ? `Exam Importance: ${card.examImportance}` : "",
-          card.commonMistake ? `Common Mistake: ${card.commonMistake}` : "",
-          card.keyPoints.length > 0 ? `Key Points: ${card.keyPoints.join(" | ")}` : "",
+          `Explanation: ${formatMathDisplayText(card.explanation || "-")}`,
+          card.formula ? `Formula: ${formatMathDisplayText(card.formula)}` : "",
+          card.diagram ? `Diagram: ${formatMathDisplayText(card.diagram)}` : "",
+          card.example ? `Example: ${formatMathDisplayText(card.example)}` : "",
+          card.examImportance
+            ? `Exam Importance: ${formatMathDisplayText(card.examImportance)}`
+            : "",
+          card.commonMistake ? `Common Mistake: ${formatMathDisplayText(card.commonMistake)}` : "",
+          card.keyPoints.length > 0
+            ? `Key Points: ${card.keyPoints.map((point) => formatMathDisplayText(point)).join(" | ")}`
+            : "",
         ].filter(Boolean);
 
         const wrapped = pdf.splitTextToSize(lines.join("\n\n"), maxWidth);
@@ -1423,7 +1657,11 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         if (y + wrapped.length * 14 > pageHeight - 50) {
           // Keep rendering simple and deterministic if card content is very long.
           pdf.setFontSize(10);
-          pdf.text("Content truncated. Refer to teaching cards for full details.", left, pageHeight - 30);
+          pdf.text(
+            "Content truncated. Refer to teaching cards for full details.",
+            left,
+            pageHeight - 30,
+          );
         }
       });
 
@@ -1442,7 +1680,8 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         message: "PDF ready — Download",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "PDF generation failed. Please try again.";
+      const message =
+        error instanceof Error ? error.message : "PDF generation failed. Please try again.";
       console.error("PDF export failed", error);
       setWorkflowError(message);
       setExportStatus({
@@ -1460,11 +1699,15 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
 
     try {
       await shareFileWithBrowser(exportArtifact.file);
-      setExportStatus((prev) => prev ? {
-        ...prev,
-        tone: "success",
-        message: `${exportArtifact.file.name} is ready to share from your browser or apps list.`,
-      } : prev);
+      setExportStatus((prev) =>
+        prev
+          ? {
+              ...prev,
+              tone: "success",
+              message: `${exportArtifact.file.name} is ready to share from your browser or apps list.`,
+            }
+          : prev,
+      );
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         return;
@@ -1472,11 +1715,15 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
       const message = error instanceof Error ? error.message : "Unable to open share sheet.";
       console.error("Export share failed", error);
       setWorkflowError(message);
-      setExportStatus((prev) => prev ? {
-        ...prev,
-        tone: "error",
-        message: "Download could not be started. Please try again.",
-      } : prev);
+      setExportStatus((prev) =>
+        prev
+          ? {
+              ...prev,
+              tone: "error",
+              message: "Download could not be started. Please try again.",
+            }
+          : prev,
+      );
     }
   }
 
@@ -1485,11 +1732,15 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
 
     try {
       await openFileInBrowser(exportArtifact.file);
-      setExportStatus((prev) => prev ? {
-        ...prev,
-        tone: "success",
-        message: `${exportArtifact.file.name} opened in a new browser tab or window.`,
-      } : prev);
+      setExportStatus((prev) =>
+        prev
+          ? {
+              ...prev,
+              tone: "success",
+              message: `${exportArtifact.file.name} opened in a new browser tab or window.`,
+            }
+          : prev,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to open generated file.";
       console.error("Open export artifact failed", error);
@@ -1498,7 +1749,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   }
 
   const activeCard = hasCards ? cards[activeCardIndex] : null;
-  const sourceReady = sourceExtraction.extractionStage === "ready" || sourceExtraction.extractionStage === "needs-review";
+  const sourceReady =
+    sourceExtraction.extractionStage === "ready" ||
+    sourceExtraction.extractionStage === "needs-review";
   const step1Done = sourceReady;
   const step2Done = step1Done && teachingResponse.trim().length > 0;
   const step3Done = step2Done && !!masterImageUrl;
@@ -1523,25 +1776,38 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
   return (
     <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur md:p-5">
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Master Learning Image Workflow</div>
-        <span className="rounded-full border border-border bg-background/60 px-3 py-1 text-xs text-muted-foreground">Create -&gt; Import -&gt; Disintegrate</span>
+        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+          Master Learning Image Workflow
+        </div>
+        <span className="rounded-full border border-border bg-background/60 px-3 py-1 text-xs text-muted-foreground">
+          Create -&gt; Import -&gt; Disintegrate
+        </span>
       </div>
 
       <div className="mb-4 grid gap-3 md:grid-cols-2">
         <div className="rounded-xl border border-dashed border-border bg-background/40 p-3 text-xs text-foreground">
-          <p className="font-semibold uppercase tracking-[0.15em] text-muted-foreground">Source Image Model</p>
+          <p className="font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+            Source Image Model
+          </p>
           <p className="mt-2">SOURCE IMAGE -&gt; OCR / SOURCE EXTRACTION</p>
         </div>
         <div className="rounded-xl border border-dashed border-border bg-background/40 p-3 text-xs text-foreground">
-          <p className="font-semibold uppercase tracking-[0.15em] text-muted-foreground">Master Image Model</p>
+          <p className="font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+            Master Image Model
+          </p>
           <p className="mt-2">MASTER TEACHING IMAGE -&gt; LOCAL STRUCTURED DISINTEGRATION</p>
         </div>
       </div>
 
       <div className="mb-4 grid gap-2 sm:grid-cols-2">
         {stepStatuses.map((step) => (
-          <div key={step.label} className="rounded-xl border border-border bg-background/50 px-3 py-2 text-xs text-foreground">
-            <span className={step.done ? "text-emerald-300" : "text-amber-200"}>{step.done ? "✓ Completed" : "○ Pending"}</span>
+          <div
+            key={step.label}
+            className="rounded-xl border border-border bg-background/50 px-3 py-2 text-xs text-foreground"
+          >
+            <span className={step.done ? "text-emerald-300" : "text-amber-200"}>
+              {step.done ? "✓ Completed" : "○ Pending"}
+            </span>
             <span className="ml-2">{step.label}</span>
           </div>
         ))}
@@ -1549,11 +1815,15 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
 
       <div className="space-y-4">
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 1 - Source Material and OCR/Source Extraction</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            STEP 1 - Source Material and OCR/Source Extraction
+          </div>
 
           <div className="mb-3 grid gap-2 md:grid-cols-2">
             <div className="rounded-xl border border-border bg-card/50 p-3 text-xs text-foreground">
-              <div className="mb-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Attached source material</div>
+              <div className="mb-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                Attached source material
+              </div>
               {sourceExtraction.sourceFiles.length > 0 ? (
                 <ul className="list-disc space-y-1 pl-5">
                   {sourceExtraction.sourceFiles.map((item) => (
@@ -1566,7 +1836,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
             </div>
 
             <div className="rounded-xl border border-border bg-card/50 p-3 text-xs text-foreground">
-              <div className="mb-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">Extracted educational structure</div>
+              <div className="mb-2 text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                Extracted educational structure
+              </div>
               <p>Subject: {sourceExtraction.metadata.subject}</p>
               <p>Class/Grade: {sourceExtraction.metadata.classLevel}</p>
               <p>Board: {sourceExtraction.metadata.board}</p>
@@ -1580,12 +1852,24 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
           </div>
 
           <div className="mb-3 rounded-xl border border-border bg-card/50 px-3 py-2 text-xs">
-            <span className="font-semibold text-foreground">OCR confidence: {sourceExtraction.confidenceLabel}</span>
-            <p className={sourceExtraction.extractionStage === "needs-review" || sourceExtraction.extractionStage === "unavailable" ? "mt-1 text-amber-200" : "mt-1 text-muted-foreground"}>
+            <span className="font-semibold text-foreground">
+              OCR confidence: {sourceExtraction.confidenceLabel}
+            </span>
+            <p
+              className={
+                sourceExtraction.extractionStage === "needs-review" ||
+                sourceExtraction.extractionStage === "unavailable"
+                  ? "mt-1 text-amber-200"
+                  : "mt-1 text-muted-foreground"
+              }
+            >
               {sourceExtraction.confidenceNote}
             </p>
-            {(sourceExtraction.extractionStage === "needs-review" || sourceExtraction.extractionStage === "unavailable") && (
-              <p className="mt-1 text-[11px] text-amber-200">Verify and edit extracted text in the OCR section above before continuing.</p>
+            {(sourceExtraction.extractionStage === "needs-review" ||
+              sourceExtraction.extractionStage === "unavailable") && (
+              <p className="mt-1 text-[11px] text-amber-200">
+                Verify and edit extracted text in the OCR section above before continuing.
+              </p>
             )}
           </div>
 
@@ -1598,7 +1882,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         </div>
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 2 - External AI Teaching Response</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            STEP 2 - External AI Teaching Response
+          </div>
           <textarea
             value={teachingResponse}
             onChange={(event) => setTeachingResponse(event.target.value)}
@@ -1608,7 +1894,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         </div>
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 3 - Create Master Teaching Image</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            STEP 3 - Create Master Teaching Image
+          </div>
           <div className="mb-2 flex flex-wrap gap-2">
             <button
               type="button"
@@ -1624,7 +1912,8 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
                 if (imageCopiedResetRef.current) clearTimeout(imageCopiedResetRef.current);
                 const finish = (ok: boolean) => {
                   setImageCopied(ok);
-                  if (ok) imageCopiedResetRef.current = setTimeout(() => setImageCopied(false), 2500);
+                  if (ok)
+                    imageCopiedResetRef.current = setTimeout(() => setImageCopied(false), 2500);
                 };
                 navigator.clipboard.writeText(imageSpec).then(
                   () => finish(true),
@@ -1633,7 +1922,8 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
                     try {
                       const ta = document.createElement("textarea");
                       ta.value = imageSpec;
-                      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
+                      ta.style.cssText =
+                        "position:fixed;top:0;left:0;opacity:0;pointer-events:none";
                       document.body.appendChild(ta);
                       ta.focus();
                       ta.select();
@@ -1673,7 +1963,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         </div>
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 4 - Master Teaching Image</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            STEP 4 - Master Teaching Image
+          </div>
           <div className="mb-3 flex flex-wrap gap-2">
             <button
               type="button"
@@ -1714,25 +2006,45 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
           {masterImageUrl && (
             <div className="grid gap-3 md:grid-cols-[1.4fr_1fr]">
               <div className="rounded-xl border border-border bg-card/50 p-2">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">MASTER TEACHING IMAGE</div>
-                <img src={masterImageUrl} alt="Master learning" className="max-h-[24rem] w-full rounded-lg object-contain" />
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+                  MASTER TEACHING IMAGE
+                </div>
+                <img
+                  src={masterImageUrl}
+                  alt="Master learning"
+                  className="max-h-[24rem] w-full rounded-lg object-contain"
+                />
               </div>
               <div className="space-y-2 rounded-xl border border-border bg-card/50 p-3 text-sm text-foreground">
                 <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
                   <FileImage size={13} />
                   Image Details
                 </div>
-                <p><span className="text-muted-foreground">Name:</span> {masterImageMeta?.name ?? "-"}</p>
-                <p><span className="text-muted-foreground">Dimensions:</span> {masterImageMeta ? `${masterImageMeta.width} x ${masterImageMeta.height}` : "-"}</p>
-                <p><span className="text-muted-foreground">Format:</span> {masterImageMeta?.mime ?? "-"}</p>
-                <p><span className="text-muted-foreground">Size:</span> {masterImageMeta ? formatBytes(masterImageMeta.size) : "-"}</p>
+                <p>
+                  <span className="text-muted-foreground">Name:</span>{" "}
+                  {masterImageMeta?.name ?? "-"}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Dimensions:</span>{" "}
+                  {masterImageMeta ? `${masterImageMeta.width} x ${masterImageMeta.height}` : "-"}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Format:</span>{" "}
+                  {masterImageMeta?.mime ?? "-"}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Size:</span>{" "}
+                  {masterImageMeta ? formatBytes(masterImageMeta.size) : "-"}
+                </p>
               </div>
             </div>
           )}
         </div>
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 5 - Structured Understanding</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            STEP 5 - Structured Understanding
+          </div>
           <button
             type="button"
             onClick={() => void onAnalyzeImage()}
@@ -1745,33 +2057,46 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
 
           {hasAnalysis && (
             <div className="mt-3 rounded-xl border border-border bg-card/50 p-3 text-sm text-foreground">
-              <p className="font-semibold">Main Topic: {analysis.mainTopic || "Not identified"}</p>
+              <p className="font-semibold">
+                Main Topic: {formatMathDisplayText(analysis.mainTopic || "Not identified")}
+              </p>
               {analysis.sourceContent.length > 0 && (
                 <div className="mt-2">
-                  <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Source Content</p>
+                  <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                    Source Content
+                  </p>
                   <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
                     {analysis.sourceContent.slice(0, 4).map((item) => (
-                      <li key={item}>{item}</li>
+                      <li key={item}>{formatMathDisplayText(item)}</li>
                     ))}
                   </ul>
                 </div>
               )}
               {analysis.additionalExamCoverage.length > 0 && (
                 <div className="mt-2">
-                  <p className="text-xs uppercase tracking-[0.15em] text-amber-200">Important Additional Exam Coverage</p>
+                  <p className="text-xs uppercase tracking-[0.15em] text-amber-200">
+                    Important Additional Exam Coverage
+                  </p>
                   <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
                     {analysis.additionalExamCoverage.slice(0, 5).map((item) => (
-                      <li key={item}>{item}</li>
+                      <li key={item}>{formatMathDisplayText(item)}</li>
                     ))}
                   </ul>
                 </div>
               )}
               {analysis.subtopics.length > 0 && (
                 <div className="mt-2">
-                  <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Subtopics</p>
+                  <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                    Subtopics
+                  </p>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {analysis.subtopics.map((item) => (
-                      <span key={item} className="rounded-full border border-border px-2 py-0.5 text-xs">{item}</span>
+                      <span
+                        key={item}
+                        className="rounded-full border border-border px-2 py-0.5 text-xs"
+                      >
+                        {formatMathDisplayText(item)}
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -1781,7 +2106,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
         </div>
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 6 - Topic Disintegration</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            STEP 6 - Topic Disintegration
+          </div>
           <button
             type="button"
             onClick={() => void onCreateTeachingCards()}
@@ -1792,18 +2119,26 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
             DISINTEGRATE INTO TEACHING CARDS
           </button>
           {hasCards && (
-            <p className="mt-2 text-sm text-emerald-200">Generated {cards.length} teaching cards in logical sequence.</p>
+            <p className="mt-2 text-sm text-emerald-200">
+              Generated {cards.length} teaching cards in logical sequence.
+            </p>
           )}
         </div>
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 7 - Teaching Deck</div>
-          {!activeCard && <p className="text-sm text-muted-foreground">Create teaching cards to open the deck.</p>}
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            STEP 7 - Teaching Deck
+          </div>
+          {!activeCard && (
+            <p className="text-sm text-muted-foreground">Create teaching cards to open the deck.</p>
+          )}
 
           {activeCard && (
             <div className="space-y-3">
               <div className="flex items-center justify-between rounded-xl border border-border bg-card/50 px-3 py-2">
-                <span className="text-sm font-semibold text-foreground">Card {activeCardIndex + 1} of {cards.length}</span>
+                <span className="text-sm font-semibold text-foreground">
+                  Card {activeCardIndex + 1} of {cards.length}
+                </span>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -1815,7 +2150,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
                   </button>
                   <button
                     type="button"
-                    onClick={() => setActiveCardIndex((prev) => Math.min(cards.length - 1, prev + 1))}
+                    onClick={() =>
+                      setActiveCardIndex((prev) => Math.min(cards.length - 1, prev + 1))
+                    }
                     disabled={activeCardIndex === cards.length - 1}
                     className="rounded-lg border border-border px-2 py-1 text-xs text-foreground disabled:opacity-40"
                   >
@@ -1825,32 +2162,67 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
               </div>
 
               <article className="rounded-xl border border-border bg-card/50 p-3">
-                <h4 className="text-base font-semibold text-foreground">{activeCard.title}</h4>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{activeCard.explanation}</p>
+                <h4 className="text-base font-semibold text-foreground break-words">
+                  {formatMathDisplayText(activeCard.title)}
+                </h4>
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm text-foreground">
+                  {formatMathDisplayText(activeCard.explanation)}
+                </p>
 
                 {activeCard.keyPoints.length > 0 && (
                   <div className="mt-3">
-                    <div className="text-xs uppercase tracking-[0.15em] text-muted-foreground">Key Points</div>
+                    <div className="text-xs uppercase tracking-[0.15em] text-muted-foreground">
+                      Key Points
+                    </div>
                     <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-foreground">
                       {activeCard.keyPoints.map((point) => (
-                        <li key={point}>{point}</li>
+                        <li key={point} className="break-words">
+                          {formatMathDisplayText(point)}
+                        </li>
                       ))}
                     </ul>
                   </div>
                 )}
 
-                {activeCard.formula && <p className="mt-3 text-sm text-foreground"><span className="text-muted-foreground">Formula:</span> {activeCard.formula}</p>}
-                {activeCard.diagram && <p className="mt-1 text-sm text-foreground"><span className="text-muted-foreground">Diagram:</span> {activeCard.diagram}</p>}
-                {activeCard.example && <p className="mt-1 whitespace-pre-wrap text-sm text-foreground"><span className="text-muted-foreground">Example:</span> {activeCard.example}</p>}
-                {activeCard.examImportance && <p className="mt-1 text-sm text-foreground"><span className="text-muted-foreground">Exam Importance:</span> {activeCard.examImportance}</p>}
-                {activeCard.commonMistake && <p className="mt-1 text-sm text-foreground"><span className="text-muted-foreground">Common Mistake:</span> {activeCard.commonMistake}</p>}
+                {activeCard.formula && (
+                  <p className="mt-3 overflow-x-auto whitespace-nowrap text-sm text-foreground">
+                    <span className="text-muted-foreground">Formula:</span>{" "}
+                    {formatMathDisplayText(activeCard.formula)}
+                  </p>
+                )}
+                {activeCard.diagram && (
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">
+                    <span className="text-muted-foreground">Diagram:</span>{" "}
+                    {formatMathDisplayText(activeCard.diagram)}
+                  </p>
+                )}
+                {activeCard.example && (
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">
+                    <span className="text-muted-foreground">Example:</span>{" "}
+                    {formatMathDisplayText(activeCard.example)}
+                  </p>
+                )}
+                {activeCard.examImportance && (
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">
+                    <span className="text-muted-foreground">Exam Importance:</span>{" "}
+                    {formatMathDisplayText(activeCard.examImportance)}
+                  </p>
+                )}
+                {activeCard.commonMistake && (
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">
+                    <span className="text-muted-foreground">Common Mistake:</span>{" "}
+                    {formatMathDisplayText(activeCard.commonMistake)}
+                  </p>
+                )}
               </article>
             </div>
           )}
         </div>
 
         <div className="rounded-2xl border border-border bg-background/50 p-3">
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">STEP 8 - Export</div>
+          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            STEP 8 - Export
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <button
               type="button"
@@ -1858,7 +2230,11 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
               disabled={!hasCards || isDownloadingPdf}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm font-semibold text-foreground disabled:opacity-50"
             >
-              {isDownloadingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              {isDownloadingPdf ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Download size={14} />
+              )}
               {isDownloadingPdf ? "GENERATING PDF..." : "DOWNLOAD TEACHING PDF"}
             </button>
             <button
@@ -1867,7 +2243,11 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
               disabled={!hasCards || isDownloadingCard}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm font-semibold text-foreground disabled:opacity-50"
             >
-              {isDownloadingCard ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              {isDownloadingCard ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Download size={14} />
+              )}
               {isDownloadingCard ? "GENERATING TEACHING CARDS..." : "DOWNLOAD TEACHING CARDS"}
             </button>
           </div>
@@ -1925,7 +2305,9 @@ export function MasterImageWorkflow({ extracted, prompt, sourceExtraction }: Mas
             <div className="mt-3 rounded-xl border border-border bg-card/60 px-3 py-3 text-xs text-foreground">
               <div className="font-semibold">How to find the file</div>
               <p className="mt-1">Open your phone's Files app -&gt; Downloads.</p>
-              <p className="mt-1">You can also check your browser menu -&gt; Downloads for {exportArtifact.file.name}.</p>
+              <p className="mt-1">
+                You can also check your browser menu -&gt; Downloads for {exportArtifact.file.name}.
+              </p>
             </div>
           )}
         </div>

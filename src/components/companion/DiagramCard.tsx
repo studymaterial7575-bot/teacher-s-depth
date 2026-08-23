@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { DiagramItem } from "./types";
+import { formatMathDisplayText } from "@/lib/teaching-engine/mathDisplay";
 
 export function DiagramCard({ d }: { d: DiagramItem }) {
   const [imgUrl, setImgUrl] = useState<string | null>(null);
@@ -14,14 +15,15 @@ export function DiagramCard({ d }: { d: DiagramItem }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `${d.title}. ${d.caption}`,
+          prompt: `${formatMathDisplayText(d.title)}. ${formatMathDisplayText(d.caption)}`,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setImgUrl(data.dataUrl);
-    } catch (e: any) {
-      setErr(e.message || "Failed");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed";
+      setErr(message);
     } finally {
       setLoading(false);
     }
@@ -29,10 +31,16 @@ export function DiagramCard({ d }: { d: DiagramItem }) {
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]">
-      <div className="mb-3 text-sm font-semibold tracking-wide text-foreground">{d.title}</div>
+      <div className="mb-3 text-sm font-semibold tracking-wide text-foreground">
+        {formatMathDisplayText(d.title)}
+      </div>
       <div className="overflow-hidden rounded-xl bg-background/40 p-3 text-foreground">
         {imgUrl ? (
-          <img src={imgUrl} alt={d.title} className="mx-auto w-full max-w-md rounded-lg" />
+          <img
+            src={imgUrl}
+            alt={formatMathDisplayText(d.title)}
+            className="mx-auto w-full max-w-md rounded-lg"
+          />
         ) : (
           <div
             className="mx-auto w-full max-w-md [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:w-full [&_text]:fill-current [&_*]:[stroke-linecap:round]"
@@ -41,7 +49,9 @@ export function DiagramCard({ d }: { d: DiagramItem }) {
         )}
       </div>
       {d.caption && (
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{d.caption}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+          {formatMathDisplayText(d.caption)}
+        </p>
       )}
       <div className="mt-3 flex items-center gap-2">
         <button

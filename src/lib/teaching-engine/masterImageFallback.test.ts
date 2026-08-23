@@ -87,4 +87,48 @@ describe("buildFallbackTeachingImageAnalysis", () => {
     expect(joined).not.toMatch(/share a link to chat/i);
     expect(joined).not.toMatch(/\bunknown\b/i);
   });
+
+  it("keeps language topics free from math-formula filler and keeps sectioned master-learning cards", () => {
+    const extracted: ExtractedContent = {
+      ocrText: [
+        "Subject: English Grammar",
+        "Topic: Tenses",
+        "Use present tense for habitual actions.",
+        "Use past tense for completed actions.",
+      ].join("\n"),
+      subject: "English",
+      board: "CBSE",
+      classLevel: "Class 8",
+      chapter: "Grammar",
+      topic: "Tenses",
+      questionType: "Grammar usage",
+      questionTypes: ["Grammar usage"],
+      language: "English",
+      hasTables: false,
+      hasExercises: true,
+      examImportance: "Medium",
+      formulae: ["V = IR"],
+      numericalQuestions: [],
+      diagrams: [],
+      keywords: ["tense", "grammar", "usage"],
+    };
+
+    const analysis = buildFallbackTeachingImageAnalysis(
+      extracted,
+      [
+        "Tenses show time of action.",
+        "Past, Present, Future are core groups.",
+        "Common error: mixing tense forms in one sentence.",
+      ].join("\n"),
+    );
+
+    const joined = analysis.cards.map((card) => `${card.title}\n${card.explanation}\n${card.keyPoints.join("\n")}`).join("\n");
+
+    expect(analysis.cards.some((card) => card.title.startsWith("A. SOURCE CONTENT"))).toBe(true);
+    expect(analysis.cards.some((card) => card.title.startsWith("I. QUICK REVISION"))).toBe(true);
+    expect(analysis.cards.some((card) => card.title.startsWith("C. GRAMMAR RULES / STRUCTURES"))).toBe(true);
+    expect(analysis.formulae).toHaveLength(0);
+    expect(joined).not.toMatch(/V\s*=\s*I\s*R|SI units|substitute values|numerical\/application/i);
+    expect(joined).toMatch(/timeline|structure|grammar|usage/i);
+  });
 });

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { TABS, type AnalysisResult } from "./types";
 import { DiagramCard } from "./DiagramCard";
 import { ImportanceBadge } from "./ImportanceBadge";
+import { formatMathDisplayText } from "@/lib/teaching-engine/mathDisplay";
 
 function Block({ children }: { children: React.ReactNode }) {
   return <div className="space-y-4 pt-2">{children}</div>;
@@ -10,7 +11,7 @@ function Block({ children }: { children: React.ReactNode }) {
 function Prose({ text }: { text: string }) {
   return (
     <div className="whitespace-pre-wrap rounded-2xl border border-border bg-card p-4 text-[15px] leading-relaxed text-foreground shadow-[var(--shadow-elegant)]">
-      {text}
+      {formatMathDisplayText(text)}
     </div>
   );
 }
@@ -28,7 +29,7 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
     <div className="flex flex-col">
       {result.topic && (
         <div className="mb-3 px-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-          Topic · <span className="text-foreground">{result.topic}</span>
+          Topic · <span className="text-foreground">{formatMathDisplayText(result.topic)}</span>
         </div>
       )}
 
@@ -48,22 +49,36 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
                   : "border border-border bg-secondary/60 text-muted-foreground hover:text-foreground")
               }
             >
-              {i + 1}. {t}
+              {i + 1}. {formatMathDisplayText(t)}
             </button>
           ))}
         </div>
       </div>
 
       <div className="space-y-6">
-        <section ref={(node) => { sectionRefs.current[0] = node; }} className="scroll-mt-32">
-          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">1. Solution</div>
+        <section
+          ref={(node) => {
+            sectionRefs.current[0] = node;
+          }}
+          className="scroll-mt-32"
+        >
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+            1. Solution
+          </div>
           <Block>
             <Prose text={result.solution || "—"} />
           </Block>
         </section>
 
-        <section ref={(node) => { sectionRefs.current[1] = node; }} className="scroll-mt-32">
-          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">2. Visual Diagrams</div>
+        <section
+          ref={(node) => {
+            sectionRefs.current[1] = node;
+          }}
+          className="scroll-mt-32"
+        >
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+            2. Visual Diagrams
+          </div>
           <Block>
             {result.diagrams?.length ? (
               result.diagrams.map((d, i) => <DiagramCard key={i} d={d} />)
@@ -73,8 +88,15 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
           </Block>
         </section>
 
-        <section ref={(node) => { sectionRefs.current[2] = node; }} className="scroll-mt-32">
-          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">3. Simple Examples</div>
+        <section
+          ref={(node) => {
+            sectionRefs.current[2] = node;
+          }}
+          className="scroll-mt-32"
+        >
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+            3. Simple Examples
+          </div>
           <Block>
             {result.simpleExamples?.map((e, i) => (
               <div
@@ -85,27 +107,45 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
                   <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[11px] font-semibold text-primary">
                     Example {i + 1}
                   </span>
-                  <span className="text-sm font-semibold text-foreground">{e.title}</span>
+                  <span className="text-sm font-semibold text-foreground">
+                    {formatMathDisplayText(e.title)}
+                  </span>
                 </div>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
                   <span className="font-medium text-foreground">Q. </span>
-                  {e.problem}
+                  {formatMathDisplayText(e.problem)}
                 </p>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{e.steps}</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+                  {formatMathDisplayText(e.steps)}
+                </p>
               </div>
             ))}
           </Block>
         </section>
 
-        <section ref={(node) => { sectionRefs.current[3] = node; }} className="scroll-mt-32">
-          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">4. Why</div>
+        <section
+          ref={(node) => {
+            sectionRefs.current[3] = node;
+          }}
+          className="scroll-mt-32"
+        >
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+            4. Why
+          </div>
           <Block>
             <Prose text={result.why || "—"} />
           </Block>
         </section>
 
-        <section ref={(node) => { sectionRefs.current[4] = node; }} className="scroll-mt-32">
-          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">5. Common Doubts</div>
+        <section
+          ref={(node) => {
+            sectionRefs.current[4] = node;
+          }}
+          className="scroll-mt-32"
+        >
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+            5. Common Doubts
+          </div>
           <Block>
             {result.doubts?.map((d, i) => (
               <div
@@ -113,14 +153,23 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
                 className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]"
               >
                 <p className="text-sm font-semibold text-accent">Q. {d.q}</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{d.a}</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+                  {formatMathDisplayText(d.a)}
+                </p>
               </div>
             ))}
           </Block>
         </section>
 
-        <section ref={(node) => { sectionRefs.current[5] = node; }} className="scroll-mt-32">
-          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">6. Similar Examples</div>
+        <section
+          ref={(node) => {
+            sectionRefs.current[5] = node;
+          }}
+          className="scroll-mt-32"
+        >
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+            6. Similar Examples
+          </div>
           <Block>
             {(["easy", "moderate", "board"] as const).map((level) => (
               <div key={level} className="space-y-2">
@@ -132,9 +181,11 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
                     key={i}
                     className="rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elegant)]"
                   >
-                    <p className="text-sm font-medium text-foreground">{q.q}</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {formatMathDisplayText(q.q)}
+                    </p>
                     <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                      {q.a}
+                      {formatMathDisplayText(q.a)}
                     </p>
                   </div>
                 ))}
@@ -143,8 +194,15 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
           </Block>
         </section>
 
-        <section ref={(node) => { sectionRefs.current[6] = node; }} className="scroll-mt-32">
-          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">7. Videos</div>
+        <section
+          ref={(node) => {
+            sectionRefs.current[6] = node;
+          }}
+          className="scroll-mt-32"
+        >
+          <div className="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.2em] text-primary">
+            7. Videos
+          </div>
           <Block>
             {result.videos?.map((v, i) => (
               <a
@@ -161,9 +219,11 @@ export function ResultTabs({ result }: { result: AnalysisResult }) {
                     </svg>
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-foreground">{v.title}</div>
+                    <div className="text-sm font-semibold text-foreground">
+                      {formatMathDisplayText(v.title)}
+                    </div>
                     <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                      Search: {v.query}
+                      Search: {formatMathDisplayText(v.query)}
                     </div>
                   </div>
                 </div>

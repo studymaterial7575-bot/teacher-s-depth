@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { Stars } from "@/components/Stars";
 import { TeacherNoteCard } from "@/components/TeacherNoteCard";
 import { findChapter, getSubject } from "@/lib/data";
+import { formatMathDisplayText } from "@/lib/teaching-engine/mathDisplay";
 import {
   STORAGE_KEYS,
   pushRecent,
@@ -115,13 +116,19 @@ function ChapterPage() {
           }
           className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs text-foreground/80 hover:text-foreground"
         >
-          {isBookmarked(chapterBmId) ? <BookmarkCheck size={12} className="text-primary" /> : <Bookmark size={12} />}
+          {isBookmarked(chapterBmId) ? (
+            <BookmarkCheck size={12} className="text-primary" />
+          ) : (
+            <Bookmark size={12} />
+          )}
           {isBookmarked(chapterBmId) ? "Bookmarked" : "Bookmark"}
         </button>
         <button
           onClick={toggleComplete}
           className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${
-            isCompleted ? "border-primary/40 bg-primary/15 text-primary" : "border-border bg-card/60 text-foreground/80"
+            isCompleted
+              ? "border-primary/40 bg-primary/15 text-primary"
+              : "border-border bg-card/60 text-foreground/80"
           }`}
         >
           <Check size={12} /> {isCompleted ? "Completed" : "Mark complete"}
@@ -161,7 +168,9 @@ function ChapterPage() {
         {active === 1 && (
           <>
             <Card>
-              <p className="text-[15px] leading-relaxed text-foreground">{chapter.deepUnderstanding}</p>
+              <p className="text-[15px] leading-relaxed text-foreground">
+                {chapter.deepUnderstanding}
+              </p>
             </Card>
             <div className="grid gap-3">
               {chapter.teacherNotes.slice(0, 2).map((n, i) => (
@@ -174,7 +183,10 @@ function ChapterPage() {
         {active === 2 && (
           <div className="grid gap-3">
             {chapter.visualBreakdown.map((v, i) => (
-              <div key={i} className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur">
+              <div
+                key={i}
+                className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur"
+              >
                 <div className="text-sm font-bold text-foreground">{v.title}</div>
                 <p className="mt-1 text-xs text-muted-foreground">{v.description}</p>
                 {v.svg && (
@@ -198,11 +210,18 @@ function ChapterPage() {
             {chapter.formulas.map((f) => {
               const id = `formula:${chapter.id}:${f.id}`;
               return (
-                <div key={f.id} className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur">
+                <div
+                  key={f.id}
+                  className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs uppercase tracking-[0.18em] text-primary">{f.title}</div>
-                      <div className="mt-1 font-mono text-base text-foreground">{f.expression}</div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-primary">
+                        {f.title}
+                      </div>
+                      <div className="mt-1 font-mono text-base text-foreground">
+                        {formatMathDisplayText(f.expression)}
+                      </div>
                     </div>
                     <button
                       onClick={() =>
@@ -216,12 +235,16 @@ function ChapterPage() {
                       }
                       className="text-muted-foreground hover:text-primary"
                     >
-                      {isBookmarked(id) ? <BookmarkCheck size={16} className="text-primary" /> : <Bookmark size={16} />}
+                      {isBookmarked(id) ? (
+                        <BookmarkCheck size={16} className="text-primary" />
+                      ) : (
+                        <Bookmark size={16} />
+                      )}
                     </button>
                   </div>
                   <p className="mt-3 rounded-xl bg-background/40 p-3 text-xs text-muted-foreground">
                     <span className="font-semibold text-foreground">Why this formula? </span>
-                    {f.meaning}
+                    {formatMathDisplayText(f.meaning)}
                   </p>
                 </div>
               );
@@ -239,7 +262,10 @@ function ChapterPage() {
             {chapter.examples.map((e, i) => {
               const id = `example:${chapter.id}:${e.id}`;
               return (
-                <div key={e.id} className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur">
+                <div
+                  key={e.id}
+                  className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[11px] font-semibold text-primary">
@@ -259,14 +285,20 @@ function ChapterPage() {
                       }
                       className="text-muted-foreground hover:text-primary"
                     >
-                      {isBookmarked(id) ? <BookmarkCheck size={16} className="text-primary" /> : <Bookmark size={16} />}
+                      {isBookmarked(id) ? (
+                        <BookmarkCheck size={16} className="text-primary" />
+                      ) : (
+                        <Bookmark size={16} />
+                      )}
                     </button>
                   </div>
                   <p className="mt-3 text-sm text-muted-foreground">
                     <span className="font-medium text-foreground">Q. </span>
-                    {e.problem}
+                    {formatMathDisplayText(e.problem)}
                   </p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{e.solution}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+                    {formatMathDisplayText(e.solution)}
+                  </p>
                 </div>
               );
             })}
@@ -277,10 +309,14 @@ function ChapterPage() {
           <div className="grid gap-3">
             {chapter.mistakes.map((m) => (
               <div key={m.id} className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4">
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-rose-300">Wrong</div>
-                <p className="mt-1 text-sm text-foreground">{m.wrong}</p>
-                <div className="mt-3 text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-300">Right</div>
-                <p className="mt-1 text-sm text-foreground">{m.right}</p>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-rose-300">
+                  Wrong
+                </div>
+                <p className="mt-1 text-sm text-foreground">{formatMathDisplayText(m.wrong)}</p>
+                <div className="mt-3 text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-300">
+                  Right
+                </div>
+                <p className="mt-1 text-sm text-foreground">{formatMathDisplayText(m.right)}</p>
               </div>
             ))}
             {chapter.teacherNotes
@@ -298,7 +334,7 @@ function ChapterPage() {
                 {chapter.revision.map((r, i) => (
                   <li key={i} className="flex gap-2">
                     <ChevronRight size={16} className="mt-0.5 shrink-0 text-primary" />
-                    <span>{r}</span>
+                    <span>{formatMathDisplayText(r)}</span>
                   </li>
                 ))}
               </ul>
@@ -332,8 +368,11 @@ function ChapterPage() {
                   {notes
                     .filter((n) => n.title === chapter.title)
                     .map((n) => (
-                      <li key={n.id} className="rounded-xl bg-background/40 p-3 text-xs text-foreground">
-                        <div className="whitespace-pre-wrap">{n.body}</div>
+                      <li
+                        key={n.id}
+                        className="rounded-xl bg-background/40 p-3 text-xs text-foreground"
+                      >
+                        <div className="whitespace-pre-wrap">{formatMathDisplayText(n.body)}</div>
                         <button
                           onClick={() => setNotes((all) => all.filter((x) => x.id !== n.id))}
                           className="mt-2 text-[11px] text-muted-foreground hover:text-destructive"

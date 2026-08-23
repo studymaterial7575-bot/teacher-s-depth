@@ -1,4 +1,8 @@
-import type { ExtractedContent, TeachingImageAnalysisResult, TeachingCard } from "@/types/teaching-engine";
+import type {
+  ExtractedContent,
+  TeachingImageAnalysisResult,
+  TeachingCard,
+} from "@/types/teaching-engine";
 import {
   filterRelevantFormulaeByContext,
   getContextAwareFallbackFormula,
@@ -7,6 +11,7 @@ import {
   sanitizeEducationalText,
   sanitizeEducationalTextByContext,
 } from "@/lib/teaching-engine/contentIntegrity";
+import { formatMathDisplayText, hasMathNotation } from "@/lib/teaching-engine/mathDisplay";
 
 const INTERNAL_GENERATION_DIRECTIVES = [
   /create a single comprehensive educational infographic/i,
@@ -36,9 +41,10 @@ function extractWorkedExampleLines(value: string) {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  const sequence = lines.filter((line) =>
-    /^(given|formula|therefore|answer)\s*[:\-]/i.test(line) ||
-    /\b(f\s*=\s*\d+\s*cm|r\s*=\s*2\s*f|r\s*=\s*\d+\s*[x×]\s*\d+|r\s*=\s*\d+\s*cm)\b/i.test(line),
+  const sequence = lines.filter(
+    (line) =>
+      /^(given|formula|therefore|answer)\s*[:-]/i.test(line) ||
+      /\b(f\s*=\s*\d+\s*cm|r\s*=\s*2\s*f|r\s*=\s*\d+\s*[x×]\s*\d+|r\s*=\s*\d+\s*cm)\b/i.test(line),
   );
 
   return sanitizeEducationalLines(sequence, 10);
@@ -59,17 +65,73 @@ function sanitizeTeachingLine(value: string, fallback: string) {
   return normalized;
 }
 
+function displayTeachingLine(value: string, fallback: string) {
+  const normalized = sanitizeTeachingLine(value, fallback);
+  if (!normalized) return fallback;
+  return hasMathNotation(normalized) ? formatMathDisplayText(normalized) : normalized;
+}
+
 function buildFormulaSummary(formula: string, fallback: string) {
   const normalized = formula.trim();
   if (!normalized) return fallback;
   if (/\bV\b.*\bI\b.*\bR\b/i.test(normalized) || /\bI\b.*\bR\b.*\bV\b/i.test(normalized)) {
     return "V = potential difference; I = current; R = resistance. The relationship shows that voltage increases with current when resistance stays constant.";
   }
-  return `${normalized} — explain the relationship between the main quantities in the topic.`;
+  return `${displayTeachingLine(normalized, fallback)} — explain the relationship between the main quantities in the topic.`;
 }
 
 function safeLines(value: string, max = 8) {
   return sanitizeEducationalLines(value.split(/\r?\n/), max);
+}
+
+function uniqueLines(values: string[], max: number) {
+  const deduped: string[] = [];
+  for (const value of values) {
+    const cleaned = sanitizeTeachingLine(value, "");
+    if (!cleaned) continue;
+    if (deduped.some((existing) => existing.toLowerCase() === cleaned.toLowerCase())) continue;
+    deduped.push(cleaned);
+    if (deduped.length >= max) break;
+  }
+  return deduped;
+}
+
+function isLanguageSubject(subject: string, topic: string) {
+  return /\b(english|hindi|marathi|language|grammar|literature|tense|voice)\b/i.test(
+    `${subject} ${topic}`,
+  );
+}
+
+function isStemSubject(subject: string) {
+  return /\b(mathematics|math|physics|chemistry|biology|science|computer|commerce)\b/i.test(
+    subject,
+  );
+}
+
+function grammarPatternHints(text: string) {
+  const lines = safeLines(text, 18).filter((line) =>
+    /\b(tense|form|structure|rule|pattern|subject|verb|object|auxiliary|timeline|usage|error)\b/i.test(
+      line,
+    ),
+  );
+  return uniqueLines(lines, 5);
+}
+
+function buildSubjectAwareQuestionTypes(subject: string, topic: string) {
+  if (isLanguageSubject(subject, topic)) {
+    return [
+      "Rule identification and usage questions",
+      "Sentence transformation/application questions",
+      "Error-spotting and correction questions",
+      "Short explanation questions",
+    ];
+  }
+  return [
+    "Definition questions",
+    "Formula/concept application questions",
+    "Numerical/application questions",
+    "Reasoning or conceptual explanation questions",
+  ];
 }
 
 function firstSentence(text: string, fallback: string) {
@@ -79,11 +141,19 @@ function firstSentence(text: string, fallback: string) {
   return sentence && sentence.length > 0 ? sentence : fallback;
 }
 
-function makeCard(title: string, explanation: string, keyPoints: string[], extra: Partial<TeachingCard> = {}): TeachingCard {
+function makeCard(
+  title: string,
+  explanation: string,
+  keyPoints: string[],
+  extra: Partial<TeachingCard> = {},
+): TeachingCard {
   return {
     title: title.trim() || "Teaching Card",
     explanation: sanitizeTeachingLine(explanation, "Core teaching content for this topic."),
-    keyPoints: keyPoints.map((point) => sanitizeTeachingLine(point, "Key teaching point.")).filter(Boolean).slice(0, 8),
+    keyPoints: keyPoints
+      .map((point) => sanitizeTeachingLine(point, "Key teaching point."))
+      .filter(Boolean)
+      .slice(0, 8),
     ...extra,
   };
 }
@@ -99,76 +169,212 @@ export function buildFallbackTeachingImageAnalysis(
   const topic = pickKnownValue(extracted.topic, "Detected Topic") || "Detected Topic";
   const chapter = pickKnownValue(extracted.chapter, "Detected Chapter") || "Detected Chapter";
   const subject = pickKnownValue(extracted.subject, "Detected Subject") || "Detected Subject";
-  const sourceContent = safeLines([cleanedSourceText, cleanedTeachingResponse].filter(Boolean).join("\n"), 8).map((line) => sanitizeTeachingLine(line, `Core idea from the source for ${topic}.`));
-  const definition = sanitizeTeachingLine(firstSentence(cleanedTeachingResponse, `Core definition for ${topic}.`), `Core definition for ${topic}.`);
-  const inlineFormulaCandidates = Array.from(cleanedTeachingResponse.matchAll(/[A-Za-z][A-Za-z0-9]*\s*=\s*[^\n,.;]+/g)).map((item) => item[0]);
-  const formula = pickPrimaryFormula([...extracted.formulae, ...inlineFormulaCandidates], formulaContext);
-  const workedExampleLines = extractWorkedExampleLines([cleanedSourceText, cleanedTeachingResponse].filter(Boolean).join("\n"));
-  const workedExampleProblem = sanitizeTeachingLine(
+  const isLanguage = isLanguageSubject(subject, topic);
+  const isStem = isStemSubject(subject);
+  const sourceOnlyLines = uniqueLines(safeLines(cleanedSourceText, 12), 8);
+  const responseSupportedLines = uniqueLines(safeLines(cleanedTeachingResponse, 12), 8);
+  const sourceContent =
+    sourceOnlyLines.length > 0
+      ? sourceOnlyLines.map((line) => displayTeachingLine(line, line))
+      : responseSupportedLines.slice(0, 6).map((line) => displayTeachingLine(line, line));
+  const definition = displayTeachingLine(
+    firstSentence(cleanedTeachingResponse, `Core definition for ${topic}.`),
+    `Core definition for ${topic}.`,
+  );
+  const inlineFormulaCandidates = Array.from(
+    cleanedTeachingResponse.matchAll(/[A-Za-z][A-Za-z0-9]*\s*=\s*[^\n,.;]+/g),
+  ).map((item) => item[0]);
+  const formula = isLanguage
+    ? ""
+    : pickPrimaryFormula([...extracted.formulae, ...inlineFormulaCandidates], formulaContext);
+  const workedExampleLines = extractWorkedExampleLines(
+    [cleanedSourceText, cleanedTeachingResponse].filter(Boolean).join("\n"),
+  );
+  const workedExampleProblem = displayTeachingLine(
     firstNonEmpty(
-      extracted.numericalQuestions[0],
+      isStem ? extracted.numericalQuestions[0] : "",
       workedExampleLines.find((line) => /\b(find|calculate|determine|evaluate)\b/i.test(line)),
-      `Apply the formula to a worked example involving ${topic}.`,
+      isLanguage
+        ? `Use one source-supported ${topic} sentence/application example.`
+        : `Apply source-supported concept/formula to a worked example involving ${topic}.`,
     ),
-    `Apply the formula to a worked example involving ${topic}.`,
+    isLanguage
+      ? `Use one source-supported ${topic} sentence/application example.`
+      : `Apply source-supported concept/formula to a worked example involving ${topic}.`,
   );
-  const workedExampleSteps = workedExampleLines.length > 0
-    ? workedExampleLines.join("\n")
-    : "1) Write the formula\n2) Substitute values\n3) Solve carefully\n4) State the final answer";
-  const diagram = sanitizeTeachingLine(
-    firstNonEmpty(extracted.diagrams[0], "The diagram labels the key parts and shows how they are related."),
-    "The diagram labels the key parts and shows how they are related.",
+  const workedExampleSteps =
+    workedExampleLines.length > 0
+      ? workedExampleLines.map((line) => displayTeachingLine(line, line)).join("\n")
+      : isLanguage
+        ? "1) Identify the required rule/structure\n2) Apply it to the sentence/context\n3) Verify correctness and usage"
+        : "1) Write the formula\n2) Substitute values\n3) Solve carefully\n4) State the final answer";
+  const diagram = displayTeachingLine(
+    firstNonEmpty(
+      extracted.diagrams[0],
+      isLanguage
+        ? "Create a clearly labelled timeline/structure map that explains the topic usage."
+        : "Create a clearly labelled conceptual diagram from the supplied topic.",
+    ),
+    isLanguage
+      ? "Create a clearly labelled timeline/structure map that explains the topic usage."
+      : "Create a clearly labelled conceptual diagram from the supplied topic.",
   );
-  const examPoints = [
-    `Exam importance: ${firstNonEmpty(extracted.examImportance, "Medium")}`,
-    "Be ready to explain the concept, the formula, and one worked example.",
-  ];
-  const commonMistakes = [
-    "Using the wrong variable in the formula",
-    "Forgetting units or a clear final answer",
-    "Skipping the reasoning step before solving",
-  ];
-  const revisionPoints = safeLines(cleanedTeachingResponse, 6);
+  const examPoints = uniqueLines(
+    [
+      displayTeachingLine(
+        `Exam importance: ${firstNonEmpty(extracted.examImportance, "Medium")}`,
+        `Exam importance: ${firstNonEmpty(extracted.examImportance, "Medium")}`,
+      ),
+      isLanguage
+        ? "Be ready to explain rule, usage, and one correct example."
+        : "Be ready to explain concept, formula, and one worked example.",
+    ],
+    4,
+  );
+  const commonMistakes = uniqueLines(
+    isLanguage
+      ? [
+          "Mixing forms/rules in the wrong context",
+          "Ignoring subject-verb agreement or time reference",
+          "Applying a rule without checking sentence meaning",
+        ]
+      : [
+          "Using the wrong variable in the formula",
+          "Forgetting units or a clear final answer",
+          "Skipping the reasoning step before solving",
+        ],
+    6,
+  );
+  const revisionPoints = uniqueLines(
+    [...sourceContent, ...responseSupportedLines, ...grammarPatternHints(cleanedTeachingResponse)],
+    6,
+  );
+  const additionalExamCoverage = uniqueLines(
+    [
+      `ADDITIONAL: Missing same-topic exam coverage for ${topic}.`,
+      isLanguage
+        ? "ADDITIONAL: Include same-topic rule-application and error-correction practice."
+        : "ADDITIONAL: Include same-topic conceptual/application/numerical practice where relevant.",
+      "ADDITIONAL: Keep additional content clearly separated from source-derived content.",
+    ],
+    6,
+  );
+
+  const formulae =
+    !isLanguage && formula
+      ? [
+          {
+            formula,
+            meaning: "Explain what the formula means and how to use it.",
+            units: isStem ? "Use standard school units where relevant" : "",
+          },
+        ]
+      : [];
+
+  const conceptSectionLines = isLanguage
+    ? uniqueLines(
+        [
+          ...grammarPatternHints(cleanedSourceText),
+          ...grammarPatternHints(cleanedTeachingResponse),
+          "Use topic-specific rules/structures from supplied context.",
+        ],
+        6,
+      )
+    : uniqueLines(
+        [
+          definition,
+          formulae[0]?.formula ? `Formula: ${formulae[0].formula}` : "",
+          formulae[0]?.meaning ?? "",
+        ],
+        6,
+      );
+
+  const commonQuestionTypes = buildSubjectAwareQuestionTypes(subject, topic);
+  const conceptHeading = isLanguage ? "C. GRAMMAR RULES / STRUCTURES" : "C. FORMULAS / CONCEPTS";
+  const workedExamplePointLines = uniqueLines(workedExampleSteps.split(/\r?\n/), 5);
+  const workedExampleMeta = workedExamplePointLines.join("\n").trim();
 
   const cards: TeachingCard[] = [
-    makeCard(`${topic} — Source Content`, definition, ["The source supports the key idea clearly.", "Keep the explanation grounded in the current source material."], { examImportance: "Source-only content" }),
-    makeCard(`${topic} — Concept & Definition`, definition, ["State the main idea clearly.", "Relate it to the chapter context."], { examImportance: "Core conceptual understanding" }),
-    makeCard(`${topic} — Important Additional Exam Coverage`, sanitizeTeachingLine(
-      firstNonEmpty(
-        sourceContent.slice(0, 1)[0],
-        `Build extra same-topic exam support for ${topic} in ${subject} with application and reasoning.`,
-      ),
-      `Build extra same-topic exam support for ${topic} in ${subject} with application and reasoning.`,
-    ), ["Explain the concept in simple classroom language.", "Apply it to a realistic exam question.", "Check the reasoning before the final answer."], { examImportance: "Additional exam-supporting coverage" }),
-    makeCard(`${topic} — Formula & Meaning`, buildFormulaSummary(formula, `The formula relates the main quantities in this topic.`), ["Write the formula first.", "Explain each variable simply."], { formula }),
-    makeCard(`${topic} — Worked Example`, workedExampleProblem, [workedExampleSteps, "Use the correct units."], { example: workedExampleSteps }),
-    makeCard(`${topic} — Diagram / Visual Map`, `A labelled diagram shows the main parts and how they are related: ${diagram}.`, ["Label the key parts clearly.", "Show the relationship visually."], { diagram }),
-    makeCard(`${topic} — Common Mistakes`, "Avoid the most common misunderstandings in this topic.", commonMistakes, { commonMistake: commonMistakes[0] }),
-    makeCard(`${topic} — Exam Importance & Revision`, "Review the key idea, formula, and worked example before class or exams.", revisionPoints.length > 0 ? revisionPoints : ["Revise the definition, formula, and one example."], { examImportance: examPoints.join(" | ") }),
-    makeCard(`${topic} — Additional Exam Coverage`, `Link the topic to ${chapter} in ${subject} with extra application, reasoning, and practice questions.`, ["Answer one application question.", "Explain the reasoning in a short answer.", "Review the main idea and formula."], { examImportance: "Additional exam-supporting coverage" }),
+    makeCard(
+      `A. SOURCE CONTENT — ${topic}`,
+      sourceContent[0] ?? definition,
+      sourceContent.slice(1, 6),
+      { examImportance: "Source-derived content" },
+    ),
+    makeCard(
+      "B. IMPORTANT ADDITIONAL EXAM COVERAGE",
+      additionalExamCoverage[0] ?? `ADDITIONAL: Same-topic exam coverage for ${topic}.`,
+      additionalExamCoverage.slice(1, 6),
+      { examImportance: "Additional exam-supporting coverage" },
+    ),
+    makeCard(
+      conceptHeading,
+      conceptSectionLines[0] ?? definition,
+      conceptSectionLines.slice(1, 6),
+      formulae[0]?.formula ? { formula: formulae[0].formula } : {},
+    ),
+    makeCard(
+      "D. VISUALS / DIAGRAMS",
+      diagram,
+      [
+        isLanguage
+          ? "Use a labelled topic timeline/structure visual."
+          : "Use labelled conceptual or process diagram from the topic.",
+        "Keep labels readable for classroom and mobile viewing.",
+      ],
+      { diagram },
+    ),
+    makeCard(
+      "E. WORKED EXAMPLES",
+      workedExampleProblem,
+      workedExamplePointLines,
+      workedExampleMeta ? { example: workedExampleMeta } : {},
+    ),
+    makeCard(
+      "F. COMMON MISTAKES",
+      commonMistakes[0] ?? "Avoid common misunderstandings in this topic.",
+      commonMistakes.slice(1, 6),
+      { commonMistake: commonMistakes[0] },
+    ),
+    makeCard(
+      "G. EXAM-IMPORTANT AREAS",
+      examPoints[0] ?? "Exam support points for this topic.",
+      examPoints.slice(1, 5),
+      { examImportance: examPoints.join(" | ") },
+    ),
+    makeCard(
+      "H. COMMON QUESTION TYPES",
+      commonQuestionTypes[0] ?? "Common question patterns for the topic.",
+      commonQuestionTypes.slice(1, 6),
+    ),
+    makeCard(
+      "I. QUICK REVISION",
+      revisionPoints[0] ?? "Quick revision points from supplied topic context.",
+      revisionPoints.slice(1, 6),
+    ),
   ];
 
   return {
     mainTopic: topic,
     subtopics: [chapter, "Definition", "Formula", "Example", "Revision"],
     sourceContent,
-    additionalExamCoverage: [
-      `Extended ${topic} practice for ${subject}`,
-      "Application and reasoning questions",
-      "Short recall and concept-check prompts",
-    ],
+    additionalExamCoverage,
     definitions: [{ title: `${topic} Definition`, text: definition }],
-    formulae: formula
-      ? [{ formula, meaning: "Explain what the formula means and how to use it.", units: "Use standard school units where relevant" }]
-      : [],
-    workedExamples: [{ title: `${topic} Worked Example`, problem: workedExampleProblem, steps: workedExampleSteps }],
+    formulae,
+    workedExamples: [
+      {
+        title: `${topic} Worked Example`,
+        problem: workedExampleProblem,
+        steps: workedExampleSteps,
+      },
+    ],
     diagrams: [{ title: `${topic} Diagram`, description: diagram }],
     tables: [],
     importantFacts: sourceContent.slice(0, 4),
     examPoints,
-    commonQuestionTypes: ["Definition questions", "Formula-based questions", "Application questions"],
+    commonQuestionTypes,
     commonMistakes,
     revisionPoints,
-    cards,
+    cards: cards.filter((card) => card.explanation.trim().length > 0),
   };
 }
