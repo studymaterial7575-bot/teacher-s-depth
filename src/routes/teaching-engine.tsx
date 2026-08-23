@@ -2330,7 +2330,7 @@ function ExtractField({
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full bg-transparent text-[15px] text-foreground outline-none sm:text-sm"
+        className="min-h-11 w-full bg-transparent px-1 py-2 text-[15px] text-foreground outline-none sm:text-sm"
       />
     </label>
   );
@@ -2375,7 +2375,7 @@ function SelectField({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full bg-transparent text-[15px] text-foreground outline-none sm:text-sm"
+        className="min-h-11 w-full bg-transparent px-1 py-2 text-[15px] text-foreground outline-none sm:text-sm"
       >
         {options.map((option) => (
           <option key={option} value={option} className="bg-background text-foreground">

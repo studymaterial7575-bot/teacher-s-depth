@@ -48,7 +48,7 @@ export function AppShell({
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            <Link to="/bookmarks" className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-full p-2 text-muted-foreground hover:text-foreground" aria-label="Bookmarks">
+            <Link to="/bookmarks" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full p-2 text-muted-foreground hover:text-foreground" aria-label="Bookmarks">
               <Bookmark size={18} />
             </Link>
           </div>
