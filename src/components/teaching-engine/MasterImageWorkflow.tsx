@@ -1,5 +1,5 @@
 import { Download, FileImage, Loader2, Sparkles, Upload } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type TouchEvent } from "react";
 import { jsPDF } from "jspdf";
 import {
   clearMasterTeachingImage,
@@ -7,6 +7,7 @@ import {
   saveMasterTeachingImage,
 } from "@/lib/teaching-engine/persistence";
 import { ensureMinimumDisintegrationCards } from "@/lib/teaching-engine/disintegration";
+import { resolveSwipeDirection } from "@/lib/teaching-engine/swipeGesture";
 import { buildFallbackTeachingImageAnalysis } from "@/lib/teaching-engine/masterImageFallback";
 import {
   filterRelevantFormulaeByContext,
@@ -1160,6 +1161,8 @@ export function MasterImageWorkflow({
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [imageCopied, setImageCopied] = useState(false);
   const imageCopiedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [cardSwipeOffset, setCardSwipeOffset] = useState(0);
   const resolvedExtracted = useMemo(
     () => resolveExtractedForWorkflow(extracted, sourceExtraction),
     [extracted, sourceExtraction],
@@ -1749,6 +1752,41 @@ export function MasterImageWorkflow({
   }
 
   const activeCard = hasCards ? cards[activeCardIndex] : null;
+
+  function goToPrevCard() {
+    setActiveCardIndex((prev) => Math.max(0, prev - 1));
+  }
+
+  function goToNextCard() {
+    setActiveCardIndex((prev) => Math.min(cards.length - 1, prev + 1));
+  }
+
+  function onCardTouchStart(event: TouchEvent<HTMLElement>) {
+    const touch = event.touches[0];
+    if (!touch) return;
+    cardTouchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    setCardSwipeOffset(0);
+  }
+
+  function onCardTouchMove(event: TouchEvent<HTMLElement>) {
+    const start = cardTouchStartRef.current;
+    const touch = event.touches[0];
+    if (!start || !touch) return;
+    setCardSwipeOffset(touch.clientX - start.x);
+  }
+
+  function onCardTouchEnd(event: TouchEvent<HTMLElement>) {
+    const start = cardTouchStartRef.current;
+    const touch = event.changedTouches[0];
+    cardTouchStartRef.current = null;
+    setCardSwipeOffset(0);
+    if (!start || !touch) return;
+
+    const direction = resolveSwipeDirection(touch.clientX - start.x, touch.clientY - start.y);
+    if (direction === "next") goToNextCard();
+    if (direction === "prev") goToPrevCard();
+  }
+
   const sourceReady =
     sourceExtraction.extractionStage === "ready" ||
     sourceExtraction.extractionStage === "needs-review";
@@ -2142,26 +2180,33 @@ export function MasterImageWorkflow({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setActiveCardIndex((prev) => Math.max(0, prev - 1))}
+                    onClick={goToPrevCard}
                     disabled={activeCardIndex === 0}
-                    className="rounded-lg border border-border px-2 py-1 text-xs text-foreground disabled:opacity-40"
+                    className="min-h-11 rounded-lg border border-border px-3 py-2 text-xs text-foreground disabled:opacity-40"
                   >
                     Previous
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setActiveCardIndex((prev) => Math.min(cards.length - 1, prev + 1))
-                    }
+                    onClick={goToNextCard}
                     disabled={activeCardIndex === cards.length - 1}
-                    className="rounded-lg border border-border px-2 py-1 text-xs text-foreground disabled:opacity-40"
+                    className="min-h-11 rounded-lg border border-border px-3 py-2 text-xs text-foreground disabled:opacity-40"
                   >
                     Next
                   </button>
                 </div>
               </div>
 
-              <article className="rounded-xl border border-border bg-card/50 p-3">
+              <article
+                onTouchStart={onCardTouchStart}
+                onTouchMove={onCardTouchMove}
+                onTouchEnd={onCardTouchEnd}
+                style={{
+                  transform: cardSwipeOffset ? `translateX(${cardSwipeOffset}px)` : undefined,
+                  transition: cardSwipeOffset ? "none" : "transform 150ms ease-out",
+                }}
+                className="touch-pan-y rounded-xl border border-border bg-card/50 p-3 select-none"
+              >
                 <h4 className="text-base font-semibold text-foreground break-words">
                   {formatMathDisplayText(activeCard.title)}
                 </h4>
@@ -2215,6 +2260,22 @@ export function MasterImageWorkflow({
                   </p>
                 )}
               </article>
+
+              {cards.length > 1 && (
+                <div className="flex items-center justify-center gap-1.5">
+                  {cards.map((card, index) => (
+                    <span
+                      key={`${card.title}-${index}`}
+                      className={`h-1.5 rounded-full transition-all ${
+                        index === activeCardIndex ? "w-4 bg-primary" : "w-1.5 bg-border"
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+              <p className="hidden text-center text-xs text-muted-foreground pointer-coarse:block">
+                Swipe left or right on the card to move between cards.
+              </p>
             </div>
           )}
         </div>
