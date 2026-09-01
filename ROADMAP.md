@@ -261,11 +261,16 @@ Planned deliverables:
 - Comprehensive teaching image generation path.
 - Image re-import and automatic teaching-card extraction.
 
-### Phase 3 — Teaching Deliverables
+### Phase 3 — Teaching Deliverables (COMPLETE)
 
-Planned deliverables:
-- Teaching PDF generation (one teaching card per page).
-- Mobile swipeable teaching deck.
+Deliverables:
+- ✅ Teaching PDF generation (one teaching card per page).
+- ✅ Mobile swipeable teaching deck — touch/swipe gesture navigation (left/right)
+  in the Teaching Deck card viewer, alongside the existing Previous/Next buttons.
+  Handles accidental vertical scrolling (horizontal-dominance + minimum-distance
+  thresholds), rapid/duplicate swipes (navigation cooldown lock), and stable
+  per-card React keys. See `src/lib/teaching-engine/swipeNavigation.ts` and
+  `src/components/teaching-engine/MasterImageWorkflow.tsx`.
 
 ### Phase 4 — Large PDF Intelligence
 
