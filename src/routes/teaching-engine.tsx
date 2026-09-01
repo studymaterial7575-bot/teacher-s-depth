@@ -1610,8 +1610,8 @@ function RouteComponent() {
 
         return `
           <figure style="margin: 0 0 1rem; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 12px; background: #f8fafc;">
-            <figcaption style="font-weight: 700; margin-bottom: 0.75rem;">Original source: ${file.name}</figcaption>
-            <img src="data:${mime};base64,${base64}" alt="${file.name}" style="max-width: 100%; border-radius: 8px; border: 1px solid #cbd5e1;" />
+            <figcaption style="font-weight: 700; margin-bottom: 0.75rem;">Original source: ${escapeHtml(file.name)}</figcaption>
+            <img src="data:${escapeHtml(mime)};base64,${base64}" alt="${escapeHtml(file.name)}" style="max-width: 100%; border-radius: 8px; border: 1px solid #cbd5e1;" />
           </figure>
         `;
       }),
