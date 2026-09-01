@@ -2213,7 +2213,6 @@ export function MasterImageWorkflow({
               </div>
 
               <article
-                key={activeCardIndex}
                 onTouchStart={onDeckTouchStart}
                 onTouchEnd={onDeckTouchEnd}
                 onTouchCancel={onDeckTouchCancel}
@@ -2233,7 +2232,7 @@ export function MasterImageWorkflow({
                     </div>
                     <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-foreground">
                       {activeCard.keyPoints.map((point, pointIndex) => (
-                        <li key={`${activeCardIndex}-${pointIndex}`} className="break-words">
+                        <li key={pointIndex} className="break-words">
                           {formatMathDisplayText(point)}
                         </li>
                       ))}
