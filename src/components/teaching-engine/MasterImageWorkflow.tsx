@@ -1,5 +1,12 @@
 import { Download, FileImage, Loader2, Sparkles, Upload } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type TouchEvent as ReactTouchEvent,
+} from "react";
 import { jsPDF } from "jspdf";
 import {
   clearMasterTeachingImage,
@@ -1160,6 +1167,9 @@ export function MasterImageWorkflow({
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [imageCopied, setImageCopied] = useState(false);
   const imageCopiedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isSwipeDragging, setIsSwipeDragging] = useState(false);
+  const touchStateRef = useRef<{ startX: number; startY: number; active: boolean } | null>(null);
   const resolvedExtracted = useMemo(
     () => resolveExtractedForWorkflow(extracted, sourceExtraction),
     [extracted, sourceExtraction],
@@ -1749,6 +1759,55 @@ export function MasterImageWorkflow({
   }
 
   const activeCard = hasCards ? cards[activeCardIndex] : null;
+
+  function goToPreviousCard() {
+    setActiveCardIndex((prev) => Math.max(0, prev - 1));
+  }
+
+  function goToNextCard() {
+    setActiveCardIndex((prev) => Math.min(cards.length - 1, prev + 1));
+  }
+
+  const SWIPE_THRESHOLD_PX = 48;
+
+  function handleDeckTouchStart(event: ReactTouchEvent<HTMLDivElement>) {
+    const touch = event.touches[0];
+    if (!touch) return;
+    touchStateRef.current = { startX: touch.clientX, startY: touch.clientY, active: true };
+    setIsSwipeDragging(true);
+    setSwipeOffset(0);
+  }
+
+  function handleDeckTouchMove(event: ReactTouchEvent<HTMLDivElement>) {
+    const state = touchStateRef.current;
+    const touch = event.touches[0];
+    if (!state || !state.active || !touch) return;
+    const deltaX = touch.clientX - state.startX;
+    const deltaY = touch.clientY - state.startY;
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      setSwipeOffset(deltaX);
+    }
+  }
+
+  function handleDeckTouchEnd(event: ReactTouchEvent<HTMLDivElement>) {
+    const state = touchStateRef.current;
+    const touch = event.changedTouches[0];
+    if (state && state.active && touch) {
+      const deltaX = touch.clientX - state.startX;
+      const deltaY = touch.clientY - state.startY;
+      if (Math.abs(deltaX) >= SWIPE_THRESHOLD_PX && Math.abs(deltaX) > Math.abs(deltaY)) {
+        if (deltaX < 0) {
+          goToNextCard();
+        } else {
+          goToPreviousCard();
+        }
+      }
+    }
+    touchStateRef.current = null;
+    setIsSwipeDragging(false);
+    setSwipeOffset(0);
+  }
+
   const sourceReady =
     sourceExtraction.extractionStage === "ready" ||
     sourceExtraction.extractionStage === "needs-review";
@@ -2142,7 +2201,7 @@ export function MasterImageWorkflow({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setActiveCardIndex((prev) => Math.max(0, prev - 1))}
+                    onClick={goToPreviousCard}
                     disabled={activeCardIndex === 0}
                     className="rounded-lg border border-border px-2 py-1 text-xs text-foreground disabled:opacity-40"
                   >
@@ -2150,9 +2209,7 @@ export function MasterImageWorkflow({
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      setActiveCardIndex((prev) => Math.min(cards.length - 1, prev + 1))
-                    }
+                    onClick={goToNextCard}
                     disabled={activeCardIndex === cards.length - 1}
                     className="rounded-lg border border-border px-2 py-1 text-xs text-foreground disabled:opacity-40"
                   >
@@ -2161,7 +2218,16 @@ export function MasterImageWorkflow({
                 </div>
               </div>
 
-              <article className="rounded-xl border border-border bg-card/50 p-3">
+              <article
+                className={`touch-pan-y rounded-xl border border-border bg-card/50 p-3 ease-out ${
+                  isSwipeDragging ? "" : "transition-transform duration-150"
+                }`}
+                style={{ transform: `translateX(${swipeOffset}px)` }}
+                onTouchStart={handleDeckTouchStart}
+                onTouchMove={handleDeckTouchMove}
+                onTouchEnd={handleDeckTouchEnd}
+                onTouchCancel={handleDeckTouchEnd}
+              >
                 <h4 className="text-base font-semibold text-foreground break-words">
                   {formatMathDisplayText(activeCard.title)}
                 </h4>
@@ -2215,6 +2281,24 @@ export function MasterImageWorkflow({
                   </p>
                 )}
               </article>
+
+              {cards.length > 1 && (
+                <div className="flex items-center justify-center gap-1.5" aria-hidden="true">
+                  {cards.map((_card, index) => (
+                    <span
+                      key={index}
+                      className={`h-1.5 rounded-full transition-all ${
+                        index === activeCardIndex
+                          ? "w-4 bg-primary"
+                          : "w-1.5 bg-muted-foreground/40"
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+              <p className="text-center text-xs text-muted-foreground sm:hidden">
+                Swipe left or right to navigate cards.
+              </p>
             </div>
           )}
         </div>
