@@ -111,6 +111,8 @@ export type VisualStyleOption = (typeof VISUAL_STYLE_OPTIONS)[number];
 export type ExplanationStyleOption = (typeof EXPLANATION_STYLE_OPTIONS)[number];
 export type OutputOption = (typeof OUTPUT_OPTIONS)[number];
 
+export type TeachingScriptId = "none" | "icse-class10-mathematics";
+
 export type FormulaExtraction = {
   raw: string;
   normalized: string;
@@ -179,6 +181,8 @@ export type PromptBuilderInput = {
   visualStyle: VisualStyleOption;
   explanationStyle: ExplanationStyleOption;
   objective: string;
+  /** Active Teaching Script / Profile. "none" (or omitted) leaves the prompt unchanged. */
+  teachingScript?: TeachingScriptId;
 };
 
 export type TeachingImageDefinition = {

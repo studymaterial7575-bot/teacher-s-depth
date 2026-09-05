@@ -17,6 +17,10 @@ import {
   sanitizeEducationalTextByContext,
 } from "@/lib/teaching-engine/contentIntegrity";
 import { formatMathDisplayText } from "@/lib/teaching-engine/mathDisplay";
+import {
+  getTeachingScript,
+  type TeachingScriptId,
+} from "@/lib/teaching-engine/teachingScripts";
 import { clearTeachingRunDerivedState, STORAGE_KEYS, useLocalStorage } from "@/lib/storage";
 import type {
   ExtractedContent,
@@ -31,6 +35,8 @@ type MasterImageWorkflowProps = {
   createTeachingImageSelected: boolean;
   /** Toggles the "Create Teaching Image" selection. Never executes generation. */
   onToggleCreateTeachingImage: () => void;
+  /** Active Teaching Script / Profile controlling how functions are applied. */
+  teachingScript: TeachingScriptId;
   sourceExtraction: {
     sourceFiles: string[];
     extractedText: string;
@@ -241,7 +247,9 @@ export function buildMasterImageSpec(
   teachingResponse: string,
   prompt: string,
   sourceText = "",
+  teachingScript: TeachingScriptId = "none",
 ) {
+  const scriptDirectives = getTeachingScript(teachingScript).imageSpecDirectives;
   const rawContext = `${extracted.subject} ${extracted.board} ${extracted.classLevel} ${extracted.chapter} ${extracted.topic} ${sourceText} ${teachingResponse}`;
   const cleanTeachingResponse = sanitizeEducationalTextByContext(teachingResponse, rawContext);
   const cleanSourceText = sanitizeEducationalTextByContext(sourceText, rawContext);
@@ -341,6 +349,7 @@ export function buildMasterImageSpec(
     "- Separate sections with clear boxes or dividers.",
     "- Keep formulas mathematically accurate.",
     "- Avoid clutter; prioritize teaching clarity and sequence.",
+    ...(scriptDirectives ? ["", scriptDirectives] : []),
   ].join("\n");
 }
 
@@ -1134,9 +1143,11 @@ export function MasterImageWorkflow({
   prompt,
   createTeachingImageSelected,
   onToggleCreateTeachingImage,
+  teachingScript,
   sourceExtraction,
 }: MasterImageWorkflowProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
+  const activeTeachingScript = getTeachingScript(teachingScript);
 
   const [teachingResponse, setTeachingResponse] = useLocalStorage(
     STORAGE_KEYS.teachingEngineResponse,
@@ -1271,6 +1282,7 @@ export function MasterImageWorkflow({
       sanitizeEducationalTextByContext(teachingResponse, rawContext),
       sanitizeEducationalTextByContext(prompt, rawContext),
       sourceExtraction.extractedText,
+      teachingScript,
     );
     setImageSpec(nextSpec);
     setWorkflowError(null);
@@ -1327,6 +1339,7 @@ export function MasterImageWorkflow({
         cleanedTeachingResponse,
         cleanedPrompt,
         sourceExtraction.extractedText,
+        teachingScript,
       );
 
     setIsGeneratingImage(true);
@@ -1903,6 +1916,12 @@ export function MasterImageWorkflow({
           <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             STEP 3 - Create Master Teaching Image
           </div>
+
+          {activeTeachingScript.id !== "none" && (
+            <div className="mb-2 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-[11px] text-foreground">
+              <span className="font-semibold">Active script:</span> {activeTeachingScript.label}
+            </div>
+          )}
 
           <button
             type="button"

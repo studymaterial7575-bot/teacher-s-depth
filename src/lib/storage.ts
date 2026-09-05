@@ -81,6 +81,7 @@ export const STORAGE_KEYS = {
   teachingEngineImageAnalysis: "td.teaching-engine.image-analysis",
   teachingEngineCards: "td.teaching-engine.cards",
   teachingEngineWorkflowStep: "td.teaching-engine.workflow-step",
+  teachingEngineTeachingScript: "td.teaching-engine.teaching-script",
 } as const;
 
 export function clearTeachingRunDerivedState() {

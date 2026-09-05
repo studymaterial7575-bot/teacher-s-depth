@@ -4,6 +4,7 @@ import {
   sanitizeEducationalLines,
   sanitizeEducationalText,
 } from "@/lib/teaching-engine/contentIntegrity";
+import { getTeachingScript } from "@/lib/teaching-engine/teachingScripts";
 
 export type InterestSignal = {
   kind: "ghost_story" | "unknown";
@@ -264,6 +265,7 @@ function buildSinglePrompt(input: PromptBuilderInput) {
     explanationStyle,
     objective,
   } = input;
+  const teachingScriptDirectives = getTeachingScript(input.teachingScript ?? "none").promptDirectives;
 
   const safeProfile = studentProfile.filter((item): item is typeof item => STUDENT_PROFILE_OPTIONS.includes(item as any));
   const safeSelectedOutputOptions = selectedOutputOptions.filter((item): item is typeof item => OUTPUT_OPTIONS.includes(item as any));
@@ -337,7 +339,7 @@ REQUIRED EXPLANATION STYLE:
 TEACHING OBJECTIVE:
 - ${objectiveLine}
 
-OUTPUT FORMATTING INSTRUCTIONS:
+${teachingScriptDirectives ? `${teachingScriptDirectives}\n\n` : ""}OUTPUT FORMATTING INSTRUCTIONS:
 - Respond in exactly three sections with these headings:
   1) SECTION 1: Normal Solution
   2) SECTION 2: Scrollable Deep Learning Section

@@ -19,6 +19,12 @@ import {
   toggleCreateTeachingImageSelection,
 } from "@/lib/teaching-engine/teachingImageSelection";
 import {
+  DEFAULT_TEACHING_SCRIPT,
+  getTeachingScript,
+  resolveTeachingScriptId,
+  TEACHING_SCRIPTS,
+} from "@/lib/teaching-engine/teachingScripts";
+import {
   buildCaptureFileName,
   captureElementToPngDataUrl,
   downloadDataUrl,
@@ -44,6 +50,7 @@ import {
   type ExtractedContent,
   type OutputOption,
   type StudentProfileOption,
+  type TeachingScriptId,
   type VisualStyleOption,
 } from "@/types/teaching-engine";
 
@@ -1011,6 +1018,10 @@ function RouteComponent() {
     STORAGE_KEYS.teachingEngineOutputSelectionMode,
     "auto",
   );
+  const [teachingScript, setTeachingScript] = useLocalStorage<TeachingScriptId>(
+    STORAGE_KEYS.teachingEngineTeachingScript,
+    DEFAULT_TEACHING_SCRIPT,
+  );
   const [quickNumberInput, setQuickNumberInput] = useState("");
   const [visualStyle, setVisualStyle] = useLocalStorage<VisualStyleOption>(
     STORAGE_KEYS.teachingEngineVisualStyle,
@@ -1240,6 +1251,31 @@ function RouteComponent() {
     setWorkflowStep("generate");
     setOutputSelectionMode("manual");
     setSelectedOutputOptions((prev) => toggleCreateTeachingImageSelection(prev));
+  }
+
+  const activeTeachingScript = getTeachingScript(resolveTeachingScriptId(teachingScript));
+
+  function onSelectTeachingScript(id: TeachingScriptId) {
+    const nextScript = getTeachingScript(id);
+    setWorkflowStep("generate");
+    setTeachingScript(nextScript.id);
+    if (nextScript.id === "none") return;
+
+    // A script is a manual execution profile: stop auto-selection from silently
+    // overriding it, apply the script's baseline defaults, and PRESERVE the
+    // user's existing selections (union, never a reset).
+    setOutputSelectionMode("manual");
+    setVisualStyle(nextScript.defaults.visualStyle);
+    setExplanationStyle(nextScript.defaults.explanationStyle);
+    setSelectedOutputOptions((prev) => {
+      const preserved = prev.filter(
+        (item): item is OutputOption =>
+          item !== "Normal Solution" && OUTPUT_OPTIONS.includes(item as OutputOption),
+      );
+      const merged = new Set<OutputOption>(["Normal Solution", ...preserved]);
+      for (const option of nextScript.defaultSelections) merged.add(option);
+      return Array.from(merged);
+    });
   }
 
   const createTeachingImageSelected = isCreateTeachingImageSelected(selectedOutputOptions);
@@ -1609,6 +1645,7 @@ function RouteComponent() {
         visualStyle,
         explanationStyle,
         objective: sanitizeTeacherRequirement(objective) || DEFAULT_OBJECTIVE,
+        teachingScript: activeTeachingScript.id,
       });
 
       const nextPrompt = nextPrompts.length <= 1
@@ -2256,6 +2293,45 @@ function RouteComponent() {
           </div>
 
           <div className="mt-3">
+            <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Teaching Script</div>
+            <div role="radiogroup" aria-label="Teaching Script" className="space-y-2">
+              {TEACHING_SCRIPTS.map((script) => {
+                const selected = activeTeachingScript.id === script.id;
+                return (
+                  <button
+                    key={script.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    aria-label={script.label}
+                    onClick={() => onSelectTeachingScript(script.id)}
+                    className={`flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition ${
+                      selected
+                        ? "border-primary/55 bg-primary/12 text-foreground shadow-[var(--shadow-elegant)]"
+                        : "border-border bg-background/45 text-foreground/90 hover:border-primary/40"
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                        selected ? "border-primary bg-primary" : "border-border bg-background/80"
+                      }`}
+                    >
+                      {selected && <span className="h-2 w-2 rounded-full bg-primary-foreground" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold leading-5">{script.label}</span>
+                      <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
+                        {script.description}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-3">
             <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Objective</div>
             <textarea
               value={objective}
@@ -2377,6 +2453,7 @@ function RouteComponent() {
           prompt={prompt}
           createTeachingImageSelected={createTeachingImageSelected}
           onToggleCreateTeachingImage={toggleCreateTeachingImage}
+          teachingScript={activeTeachingScript.id}
           sourceExtraction={sourceExtractionContext}
         />
       </div>
