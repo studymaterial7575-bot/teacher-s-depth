@@ -14,6 +14,16 @@ import {
   sanitizeTeacherRequirement,
 } from "@/lib/teaching-engine/contentIntegrity";
 import { getAutoRelevantOutputOptions } from "@/lib/teaching-engine/outputSelection";
+import {
+  isCreateTeachingImageSelected,
+  toggleCreateTeachingImageSelection,
+} from "@/lib/teaching-engine/teachingImageSelection";
+import {
+  buildCaptureFileName,
+  captureElementToPngDataUrl,
+  downloadDataUrl,
+  runFullPageCapture,
+} from "@/lib/teaching-engine/fullPageCapture";
 import { buildAiPackageText } from "@/lib/teaching-engine/aiPackage";
 import { buildPromptTexts } from "@/lib/teaching-engine/promptBuilder";
 import {
@@ -1018,6 +1028,8 @@ function RouteComponent() {
   );
   const [copied, setCopied] = useState(false);
   const [isBuildingPrompt, setIsBuildingPrompt] = useState(false);
+  const [isCapturingPage, setIsCapturingPage] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const [buildStatus, setBuildStatus] = useState<string | null>(null);
   const [buildStages, setBuildStages] = useState<BuildStage[]>([]);
   const [buildSuccess, setBuildSuccess] = useState<string | null>(null);
@@ -1028,6 +1040,7 @@ function RouteComponent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadAnotherInputRef = useRef<HTMLInputElement>(null);
+  const captureRef = useRef<HTMLDivElement>(null);
   const autoOpenedEntryRef = useRef<string | null>(null);
   const activeProcessingRef = useRef<{ id: number; controller: AbortController } | null>(null);
   const copiedResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1221,6 +1234,33 @@ function RouteComponent() {
         ? ["Normal Solution", ...next.filter((item) => item !== option)]
         : ["Normal Solution", ...next, option];
     });
+  }
+
+  function toggleCreateTeachingImage() {
+    setWorkflowStep("generate");
+    setOutputSelectionMode("manual");
+    setSelectedOutputOptions((prev) => toggleCreateTeachingImageSelection(prev));
+  }
+
+  const createTeachingImageSelected = isCreateTeachingImageSelected(selectedOutputOptions);
+
+  async function onCaptureFullPage() {
+    const target = captureRef.current;
+    if (!target || isCapturingPage) return;
+
+    setCaptureError(null);
+    try {
+      await runFullPageCapture({
+        setCapturing: setIsCapturingPage,
+        performCapture: async () => {
+          const result = await captureElementToPngDataUrl(target);
+          downloadDataUrl(result.dataUrl, buildCaptureFileName(Date.now()));
+        },
+      });
+    } catch (error) {
+      console.error("Full page capture failed", error);
+      setCaptureError("Unable to capture the full page. Please try again.");
+    }
   }
 
   function applyQuickNumberSelection(rawInput: string) {
@@ -1738,7 +1778,7 @@ function RouteComponent() {
 
   return (
     <AppShell back={{ to: "/" }} title="Teacher's Depth Teaching Procedure">
-      <div className="space-y-3 pb-28 sm:space-y-4 md:pb-8">
+      <div ref={captureRef} className="space-y-3 pb-28 sm:space-y-4 md:pb-8">
         <section className="rounded-3xl border border-border bg-card/70 p-4 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -1928,6 +1968,29 @@ function RouteComponent() {
               )}
             </div>
           )}
+
+          <div className="mt-3 rounded-2xl border border-border bg-background/50 p-3">
+            <button
+              type="button"
+              data-capture-exclude
+              onClick={() => void onCaptureFullPage()}
+              disabled={isCapturingPage}
+              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-sm font-semibold text-foreground disabled:opacity-60 sm:w-auto"
+            >
+              {isCapturingPage && <Loader2 size={15} className="animate-spin" />}
+              {isCapturingPage ? "Capturing Full Page..." : "📸 Capture Full Page"}
+            </button>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Captures the complete Source Content page exactly as shown, with your current selections
+              (checked stay checked, unchecked stay unchecked). Selections are not changed and image
+              generation is not executed.
+            </p>
+            {captureError && (
+              <p className="mt-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+                {captureError}
+              </p>
+            )}
+          </div>
         </section>
 
         <section className="rounded-3xl border border-border bg-card/70 p-3 shadow-[var(--shadow-elegant)] backdrop-blur sm:p-4 md:p-5">
@@ -2309,7 +2372,13 @@ function RouteComponent() {
           summary={promptSummary}
         />
 
-        <MasterImageWorkflow extracted={extracted} prompt={prompt} sourceExtraction={sourceExtractionContext} />
+        <MasterImageWorkflow
+          extracted={extracted}
+          prompt={prompt}
+          createTeachingImageSelected={createTeachingImageSelected}
+          onToggleCreateTeachingImage={toggleCreateTeachingImage}
+          sourceExtraction={sourceExtractionContext}
+        />
       </div>
     </AppShell>
   );

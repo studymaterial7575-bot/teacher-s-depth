@@ -27,6 +27,10 @@ import type {
 type MasterImageWorkflowProps = {
   extracted: ExtractedContent;
   prompt: string;
+  /** Workflow state: is the "Create Teaching Image" step ticked/included? */
+  createTeachingImageSelected: boolean;
+  /** Toggles the "Create Teaching Image" selection. Never executes generation. */
+  onToggleCreateTeachingImage: () => void;
   sourceExtraction: {
     sourceFiles: string[];
     extractedText: string;
@@ -1128,6 +1132,8 @@ async function renderTeachingCardsSheetBlob(cards: TeachingCard[]) {
 export function MasterImageWorkflow({
   extracted,
   prompt,
+  createTeachingImageSelected,
+  onToggleCreateTeachingImage,
   sourceExtraction,
 }: MasterImageWorkflowProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -1897,6 +1903,39 @@ export function MasterImageWorkflow({
           <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             STEP 3 - Create Master Teaching Image
           </div>
+
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={createTeachingImageSelected}
+            aria-label="Create Teaching Image"
+            onClick={onToggleCreateTeachingImage}
+            className={`mb-2 flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${
+              createTeachingImageSelected
+                ? "border-primary/60 bg-primary/10 text-foreground"
+                : "border-border bg-card/50 text-foreground hover:border-primary/40"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-[10px] font-bold ${
+                createTeachingImageSelected
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-transparent"
+              }`}
+            >
+              ✓
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold leading-5">Create Teaching Image</span>
+              <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
+                {createTeachingImageSelected
+                  ? "Selected - this workflow step is included. Selection does not generate the image."
+                  : "Not selected - tick to include this workflow step. Selection does not generate the image."}
+              </span>
+            </span>
+          </button>
+
           <div className="mb-2 flex flex-wrap gap-2">
             <button
               type="button"
@@ -1944,15 +1983,22 @@ export function MasterImageWorkflow({
             <button
               type="button"
               onClick={() => void onGenerateTeachingImage()}
-              disabled={!canGenerateImage || isGeneratingImage}
+              disabled={!createTeachingImageSelected || !canGenerateImage || isGeneratingImage}
               className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
               style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-elegant)" }}
             >
               {isGeneratingImage && <Loader2 size={14} className="animate-spin" />}
               <Sparkles size={15} />
-              CREATE TEACHING IMAGE
+              Generate Teaching Image Now
             </button>
           </div>
+
+          {!createTeachingImageSelected && (
+            <p className="mb-2 text-[11px] text-muted-foreground">
+              Tick "Create Teaching Image" above to include this step, then use Generate Teaching
+              Image Now to execute it.
+            </p>
+          )}
 
           <textarea
             value={imageSpec}
