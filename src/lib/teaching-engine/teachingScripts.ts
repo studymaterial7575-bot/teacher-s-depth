@@ -1,24 +1,29 @@
 import { OUTPUT_OPTIONS, type OutputOption } from "@/types/teaching-engine";
 
 /**
- * Teaching Script / Profile layer.
+ * UNIVERSAL TEACHING SCRIPT LIBRARY
  *
  * Teacher's Depth has EXACTLY 23 master functions (OUTPUT_OPTIONS in
  * src/types/teaching-engine.ts). A Teaching Script never adds a function;
  * it is a specialized execution profile that controls HOW the existing
  * 23 functions are applied to the current question/content.
  *
- * Extensibility: to add a future subject-specific script, append a new entry
- * to TEACHING_SCRIPTS and its id to TeachingScriptId — no other redesign is
- * needed. All injection points are optional and empty for "none", so the
- * default behaviour stays byte-identical.
+ * DESIGN GOALS (library, not a single-script feature):
+ * - The registry (TEACHING_SCRIPTS) is the SINGLE SOURCE OF TRUTH. The
+ *   TeachingScriptId type is DERIVED from it, so adding a future script is a
+ *   pure data-entry: give it an `id` and add the definition here. No core
+ *   application logic, types file, or registry union needs to change.
+ * - Scripts reference ONLY existing Teacher's Depth functions.
+ * - All injection points are optional and empty for "none", so the default
+ *   behaviour stays byte-identical.
+ * - See `assertValidTeachingScript` for the self-contained validation a new
+ *   definition must pass before being registered.
  */
-export type TeachingScriptId = "none" | "icse-class10-mathematics";
 
 export type FunctionApplicability = "APPLICABLE" | "NOT_APPLICABLE" | "REVIEW_REQUIRED";
 
 export type TeachingScript = {
-  id: TeachingScriptId;
+  id: string;
   label: string;
   description: string;
   /** Directives injected into the generated teaching prompt ("" when none). */
@@ -149,20 +154,26 @@ Clearly identify unclear or missing source material; never invent missing source
   },
 };
 
-export const TEACHING_SCRIPTS: readonly TeachingScript[] = [NO_SCRIPT, ICSE_CLASS10_MATHEMATICS];
+export const TEACHING_SCRIPTS = [NO_SCRIPT, ICSE_CLASS10_MATHEMATICS] as const;
+
+/**
+ * A valid Teaching Script ID is the id of a script registered in the library.
+ * Derived from TEACHING_SCRIPTS so future scripts are added by data-entry only.
+ */
+export type TeachingScriptId = (typeof TEACHING_SCRIPTS)[number]["id"];
 
 export const DEFAULT_TEACHING_SCRIPT: TeachingScriptId = "none";
 
-const SCRIPT_MAP = new Map<TeachingScriptId, TeachingScript>(
+const SCRIPT_MAP = new Map<string, TeachingScript>(
   TEACHING_SCRIPTS.map((script) => [script.id, script]),
 );
 
-export function getTeachingScript(id: TeachingScriptId): TeachingScript {
+export function getTeachingScript(id: string): TeachingScript {
   return SCRIPT_MAP.get(id) ?? NO_SCRIPT;
 }
 
 export function isTeachingScriptId(value: string): value is TeachingScriptId {
-  return SCRIPT_MAP.has(value as TeachingScriptId);
+  return SCRIPT_MAP.has(value);
 }
 
 /** Normalizes arbitrary stored input into a valid script id (defaults to "none"). */
@@ -193,6 +204,43 @@ export const ICSE_FINAL_QA_CHECKS = [
 export function scriptReferencesOnlyKnownFunctions(script: TeachingScript): boolean {
   const known = new Set<string>(OUTPUT_OPTIONS);
   return script.defaultSelections.every((option) => known.has(option));
+}
+
+/**
+ * Self-contained validation for a Teaching Script definition.
+ *
+ * A FUTURE script can be registered by adding one data entry to
+ * TEACHING_SCRIPTS without touching any core application logic — this helper
+ * is the only gate it must pass. It enforces the library invariants:
+ * - unique, non-empty id;
+ * - label + description present;
+ * - references only existing Teacher's Depth functions (never a #24);
+ * - no permanent suppression mechanism (suppressFunctions-style fields absent).
+ */
+export function assertValidTeachingScript(
+  script: TeachingScript,
+  existingIds: readonly string[] = TEACHING_SCRIPTS.map((s) => s.id),
+): void {
+  if (!script.id || typeof script.id !== "string") {
+    throw new Error("Teaching Script must have a non-empty string id.");
+  }
+  if (existingIds.includes(script.id)) {
+    throw new Error(`Duplicate Teaching Script id: "${script.id}".`);
+  }
+  if (!script.label.trim() || !script.description.trim()) {
+    throw new Error(`Teaching Script "${script.id}" needs a label and description.`);
+  }
+  if (!scriptReferencesOnlyKnownFunctions(script)) {
+    throw new Error(
+      `Teaching Script "${script.id}" references an unknown Teacher's Depth function.`,
+    );
+  }
+  const asRecord = script as unknown as Record<string, unknown>;
+  if ("suppressFunctions" in asRecord || "disabledFunctions" in asRecord) {
+    throw new Error(
+      `Teaching Script "${script.id}" must not permanently suppress Teacher's Depth functions.`,
+    );
+  }
 }
 
 export type { OutputOption };

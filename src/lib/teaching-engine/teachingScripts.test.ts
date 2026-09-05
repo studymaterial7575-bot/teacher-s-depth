@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertValidTeachingScript,
   DEFAULT_TEACHING_SCRIPT,
   getTeachingScript,
   ICSE_FINAL_QA_CHECKS,
@@ -7,6 +8,8 @@ import {
   resolveTeachingScriptId,
   scriptReferencesOnlyKnownFunctions,
   TEACHING_SCRIPTS,
+  type TeachingScript,
+  type TeachingScriptId,
 } from "@/lib/teaching-engine/teachingScripts";
 import { buildPromptTexts } from "@/lib/teaching-engine/promptBuilder";
 import { buildMasterImageSpec } from "@/components/teaching-engine/MasterImageWorkflow";
@@ -228,5 +231,85 @@ describe("Create Teaching Image integration", () => {
     expect(spec).toContain("Verification");
     expect(spec).toContain("MCQ: preserve exact options");
     expect(spec).toContain("Not applicable to this question.");
+  });
+});
+
+describe("universal teaching script library architecture", () => {
+  it("TeachingScriptId is derived from the registry (single source of truth)", () => {
+    // A valid id must be a registered script id; the type is derived from
+    // TEACHING_SCRIPTS, so the registry alone defines the valid ids.
+    const registeredIds = TEACHING_SCRIPTS.map((s) => s.id);
+    for (const id of registeredIds) {
+      expect(isTeachingScriptId(id)).toBe(true);
+    }
+    // Compile-time proof: a registered id satisfies TeachingScriptId.
+    const id: TeachingScriptId = TEACHING_SCRIPTS[1].id;
+    expect(id).toBe("icse-class10-mathematics");
+  });
+
+  it("contains exactly the current two script ids (none + ICSE)", () => {
+    expect(TEACHING_SCRIPTS.map((s) => s.id)).toEqual(["none", "icse-class10-mathematics"]);
+    expect(TEACHING_SCRIPTS).toHaveLength(2);
+  });
+
+  it("every registered script passes library validation", () => {
+    for (const script of TEACHING_SCRIPTS) {
+      // validate against all OTHER ids to prove uniqueness without self-collision
+      const others = TEACHING_SCRIPTS.map((s) => s.id).filter((id) => id !== script.id);
+      expect(() => assertValidTeachingScript(script, others)).not.toThrow();
+    }
+  });
+
+  it("assertValidTeachingScript rejects a duplicate id", () => {
+    const dupe: TeachingScript = { ...getTeachingScript("none") };
+    expect(() => assertValidTeachingScript(dupe)).toThrow(/Duplicate Teaching Script id/);
+  });
+
+  it("assertValidTeachingScript rejects a script referencing an unknown function (#24)", () => {
+    const bad: TeachingScript = {
+      ...getTeachingScript("none"),
+      id: "future-bad",
+      label: "Bad",
+      description: "references unknown function",
+      defaultSelections: ["Not A Real Function" as never],
+    };
+    expect(() => assertValidTeachingScript(bad)).toThrow(/unknown Teacher's Depth function/);
+  });
+
+  it("assertValidTeachingScript rejects permanent function suppression", () => {
+    const bad = {
+      ...getTeachingScript("none"),
+      id: "future-suppressing",
+      label: "Suppressing",
+      description: "tries to suppress",
+      suppressFunctions: ["Word Meanings"],
+    } as unknown as TeachingScript;
+    expect(() => assertValidTeachingScript(bad)).toThrow(/must not permanently suppress/);
+  });
+
+  it("a future valid script can be added as pure data without core-logic changes", () => {
+    // Simulate a future subject script defined ONLY as data (no code changes).
+    const future: TeachingScript = {
+      id: "future-subject",
+      label: "Future Subject — Expert Teaching Script",
+      description: "Placeholder proving extensibility.",
+      promptDirectives: "TEACHING SCRIPT ACTIVE: FUTURE",
+      imageSpecDirectives: "TEACHING SCRIPT ACTIVE: FUTURE",
+      defaultSelections: ["Logical Flow", "Common Mistakes"],
+      defaults: {
+        visualStyle: "Dissected step-by-step visual",
+        explanationStyle: "Highly structured step-by-step",
+      },
+    };
+    // Passes validation against existing ids, and the OUTPUT_OPTIONS registry
+    // (the 23 functions) is untouched by its definition.
+    expect(() => assertValidTeachingScript(future)).not.toThrow();
+    expect(OUTPUT_OPTIONS).toHaveLength(24);
+    expect(TEACHING_SCRIPTS).toHaveLength(2); // still not registered; future-only proof
+  });
+
+  it("registry ids remain unique", () => {
+    const ids = TEACHING_SCRIPTS.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

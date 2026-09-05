@@ -111,7 +111,10 @@ export type VisualStyleOption = (typeof VISUAL_STYLE_OPTIONS)[number];
 export type ExplanationStyleOption = (typeof EXPLANATION_STYLE_OPTIONS)[number];
 export type OutputOption = (typeof OUTPUT_OPTIONS)[number];
 
-export type TeachingScriptId = "none" | "icse-class10-mathematics";
+// TeachingScriptId is derived from the Teaching Script Library registry
+// (src/lib/teaching-engine/teachingScripts.ts), the single source of truth.
+import type { TeachingScriptId } from "@/lib/teaching-engine/teachingScripts";
+export type { TeachingScriptId };
 
 export type FormulaExtraction = {
   raw: string;
